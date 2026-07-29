@@ -1,0 +1,735 @@
+<!doctype html>
+<html>
+    <head>
+        <meta charset="utf-8" />
+        <title>Token usage &amp; spend</title>
+        <style>
+            :root {
+                color-scheme: light dark;
+            }
+            * {
+                box-sizing: border-box;
+            }
+            body {
+                margin: 0;
+                padding: 12px 14px 32px;
+                background: var(--background-color-default, #ffffff);
+                color: var(--text-color-default, #1f2328);
+                font-family: var(--font-sans, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif);
+                font-size: var(--text-body-medium, 14px);
+                line-height: var(--leading-body-medium, 20px);
+            }
+            h1 {
+                font-size: var(--text-title-medium, 18px);
+                font-weight: var(--font-weight-semibold, 600);
+                line-height: var(--leading-title-medium, 24px);
+                margin: 0;
+            }
+            h2 {
+                font-size: var(--text-title-small, 15px);
+                font-weight: var(--font-weight-semibold, 600);
+                margin: 18px 0 6px;
+            }
+            .muted {
+                color: var(--text-color-muted, #59636e);
+            }
+            .mono {
+                font-family: var(--font-mono, "SFMono-Regular", Consolas, monospace);
+                font-size: var(--text-code-inline, 12px);
+            }
+            header.top {
+                display: flex;
+                align-items: center;
+                gap: 8px;
+                flex-wrap: wrap;
+                margin-bottom: 10px;
+            }
+            header.top .spacer {
+                flex: 1;
+            }
+            button {
+                font: inherit;
+                color: inherit;
+                background: transparent;
+                border: 1px solid var(--border-color-default, #d1d9e0);
+                border-radius: 6px;
+                padding: 3px 10px;
+                cursor: pointer;
+            }
+            button:hover {
+                background: var(--background-color-muted, rgba(127, 127, 127, 0.1));
+            }
+            button.primary {
+                border-color: var(--true-color-blue, #0969da);
+                color: var(--true-color-blue, #0969da);
+            }
+            button.danger {
+                border-color: var(--true-color-red-muted, rgba(207, 34, 46, 0.4));
+                color: var(--true-color-red, #cf222e);
+            }
+            button:disabled {
+                opacity: 0.5;
+                cursor: default;
+            }
+            input,
+            select {
+                font: inherit;
+                color: inherit;
+                background: transparent;
+                border: 1px solid var(--border-color-default, #d1d9e0);
+                border-radius: 6px;
+                padding: 2px 6px;
+                min-width: 0;
+                width: 100%;
+            }
+            input[type="checkbox"] {
+                width: auto;
+            }
+            .cards {
+                display: flex;
+                gap: 8px;
+                flex-wrap: wrap;
+                margin-bottom: 6px;
+            }
+            .card {
+                border: 1px solid var(--border-color-default, #d1d9e0);
+                border-radius: 8px;
+                padding: 7px 11px;
+                min-width: 108px;
+            }
+            .card .label {
+                font-size: var(--text-body-small, 12px);
+                color: var(--text-color-muted, #59636e);
+            }
+            .card .value {
+                font-size: var(--text-title-small, 16px);
+                font-weight: var(--font-weight-semibold, 600);
+                font-variant-numeric: tabular-nums;
+            }
+            nav.tabs {
+                display: flex;
+                gap: 2px;
+                border-bottom: 1px solid var(--border-color-default, #d1d9e0);
+                margin: 12px 0 10px;
+            }
+            nav.tabs button {
+                border: none;
+                border-bottom: 2px solid transparent;
+                border-radius: 0;
+                padding: 6px 12px;
+            }
+            nav.tabs button[aria-selected="true"] {
+                border-bottom-color: var(--true-color-blue, #0969da);
+                font-weight: var(--font-weight-semibold, 600);
+            }
+            table {
+                width: 100%;
+                border-collapse: collapse;
+                font-variant-numeric: tabular-nums;
+            }
+            th,
+            td {
+                text-align: left;
+                padding: 5px 7px;
+                border-bottom: 1px solid var(--border-color-muted, rgba(127, 127, 127, 0.2));
+                vertical-align: top;
+            }
+            th {
+                font-size: var(--text-body-small, 12px);
+                color: var(--text-color-muted, #59636e);
+                font-weight: var(--font-weight-semibold, 600);
+                white-space: nowrap;
+            }
+            td.num,
+            th.num {
+                text-align: right;
+                white-space: nowrap;
+            }
+            tr.clickable:hover td {
+                background: var(--background-color-muted, rgba(127, 127, 127, 0.08));
+                cursor: pointer;
+            }
+            .pill {
+                display: inline-block;
+                border-radius: 999px;
+                padding: 0 7px;
+                font-size: var(--text-body-small, 12px);
+                border: 1px solid var(--border-color-default, #d1d9e0);
+            }
+            .pill.warn {
+                color: var(--true-color-red, #cf222e);
+                border-color: var(--true-color-red-muted, rgba(207, 34, 46, 0.4));
+            }
+            .pill.ok {
+                color: var(--true-color-green, #1a7f37);
+                border-color: var(--true-color-green-muted, rgba(26, 127, 55, 0.4));
+            }
+            pre {
+                background: var(--background-color-muted, rgba(127, 127, 127, 0.08));
+                border: 1px solid var(--border-color-default, #d1d9e0);
+                border-radius: 6px;
+                padding: 8px 10px;
+                overflow-x: auto;
+                font-family: var(--font-mono, monospace);
+                font-size: var(--text-code-block, 12px);
+                margin: 6px 0;
+            }
+            .row {
+                display: flex;
+                gap: 8px;
+                align-items: center;
+                flex-wrap: wrap;
+                margin: 8px 0;
+            }
+            .hidden {
+                display: none !important;
+            }
+            .toast {
+                position: fixed;
+                right: 14px;
+                bottom: 14px;
+                border: 1px solid var(--border-color-default, #d1d9e0);
+                background: var(--background-color-default, #fff);
+                border-radius: 6px;
+                padding: 6px 12px;
+            }
+            .note {
+                font-size: var(--text-body-small, 12px);
+                color: var(--text-color-muted, #59636e);
+                margin: 4px 0 10px;
+            }
+            .live-dot {
+                display: inline-block;
+                width: 8px;
+                height: 8px;
+                border-radius: 50%;
+                background: var(--true-color-green, #1a7f37);
+                margin-right: 5px;
+            }
+            .live-dot.off {
+                background: var(--text-color-muted, #59636e);
+            }
+        </style>
+    </head>
+    <body>
+        <header class="top">
+            <h1>Token usage &amp; spend</h1>
+            <span class="spacer"></span>
+            <span class="muted" id="liveState"><span class="live-dot off"></span>connecting</span>
+            <button id="refreshBtn">Refresh</button>
+        </header>
+
+        <div class="cards" id="totals"></div>
+        <div class="note" id="sourceNote"></div>
+
+        <nav class="tabs">
+            <button data-tab="sessions" aria-selected="true">Sessions</button>
+            <button data-tab="models" aria-selected="false">Models</button>
+            <button data-tab="rates" aria-selected="false">Rate card</button>
+            <button data-tab="otel" aria-selected="false">Telemetry</button>
+        </nav>
+
+        <section id="tab-sessions">
+            <div id="sessionDetail" class="hidden"></div>
+            <div id="sessionList"></div>
+        </section>
+
+        <section id="tab-models" class="hidden"></section>
+
+        <section id="tab-rates" class="hidden">
+            <div class="row">
+                <label>USD per AI unit (AIU) <input id="usdPerAiu" type="number" step="0.000001" style="width: 120px" /></label>
+                <label><input id="cacheIncluded" type="checkbox" /> cache tokens are already counted inside input tokens</label>
+            </div>
+            <div class="note">
+                Prices are USD per 1,000,000 tokens. Leave <em>reasoning</em> blank when reasoning tokens are already billed as
+                output tokens. Use <span class="mono">*</span> in provider / model / effort as a wildcard; the most specific
+                match wins. Copilot itself bills in AI units, so the AIU column is the authoritative spend and the token
+                estimate is a modelled cost.
+            </div>
+            <div class="row">
+                <button id="addRateBtn">Add row</button>
+                <button id="seedBtn">Add models seen in usage</button>
+                <span class="spacer"></span>
+                <button id="saveRatesBtn" class="primary">Save rate card</button>
+            </div>
+            <div id="ratesTable"></div>
+        </section>
+
+        <section id="tab-otel" class="hidden"></section>
+
+        <div id="toast" class="toast hidden"></div>
+
+        <script>
+            const state = { report: null, card: null, otel: null, tab: "sessions", openSession: null };
+
+            const fmtInt = (n) => (n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
+            const fmtTok = (n) => {
+                n = n || 0;
+                if (n >= 1e9) return (n / 1e9).toFixed(2) + "B";
+                if (n >= 1e6) return (n / 1e6).toFixed(2) + "M";
+                if (n >= 1e3) return (n / 1e3).toFixed(1) + "k";
+                return String(n);
+            };
+            const fmtUsd = (n) => "$" + (n || 0).toFixed(Math.abs(n || 0) < 1 ? 4 : 2);
+            const fmtAiu = (n) => (n || 0).toFixed(2);
+            const esc = (s) =>
+                String(s === null || s === undefined ? "" : s).replace(
+                    /[&<>"']/g,
+                    (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" })[c],
+                );
+            const shortTime = (iso) => {
+                if (!iso) return "";
+                const d = new Date(iso);
+                return isNaN(d) ? String(iso) : d.toLocaleString(undefined, { dateStyle: "short", timeStyle: "short" });
+            };
+
+            function toast(msg) {
+                const el = document.getElementById("toast");
+                el.textContent = msg;
+                el.classList.remove("hidden");
+                clearTimeout(toast._t);
+                toast._t = setTimeout(() => el.classList.add("hidden"), 2200);
+            }
+
+            async function api(path, options) {
+                const res = await fetch(path, options);
+                if (!res.ok) throw new Error(await res.text());
+                return res.json();
+            }
+
+            async function load() {
+                state.report = await api("/api/report");
+                state.card = JSON.parse(JSON.stringify(state.report.card));
+                state.otel = await api("/api/otel");
+                render();
+            }
+
+            function renderTotals() {
+                const t = state.report.totals;
+                const cards = [
+                    ["Model calls", fmtInt(t.calls)],
+                    ["Input tokens", fmtTok(t.inputTokens)],
+                    ["Output tokens", fmtTok(t.outputTokens)],
+                    ["Cache read", fmtTok(t.cacheReadTokens)],
+                    ["AI units", fmtAiu(t.aiu)],
+                    ["Cost from AIU", fmtUsd(t.aiuCost)],
+                    ["Cost from rate card", fmtUsd(t.tokenCost)],
+                ];
+                document.getElementById("totals").innerHTML = cards
+                    .map((c) => '<div class="card"><div class="label">' + c[0] + '</div><div class="value">' + c[1] + "</div></div>")
+                    .join("");
+
+                const s = state.report.sources;
+                const bits = [
+                    s.db.available ? s.db.rows + " rows from session-store.db" : "session-store.db unavailable (" + esc(s.db.reason) + ")",
+                    s.live.rows + " captured live events",
+                    s.merged + " unique model calls after dedupe",
+                ];
+                if (state.report.unpricedCalls > 0) {
+                    bits.push(
+                        '<span class="pill warn">' +
+                            state.report.unpricedCalls +
+                            " calls have no rate card price</span>",
+                    );
+                }
+                if (!state.report.card.usdPerAiu) {
+                    bits.push('<span class="pill warn">USD per AIU not set</span>');
+                }
+                document.getElementById("sourceNote").innerHTML = bits.join(" &middot; ");
+            }
+
+            function renderSessions() {
+                const rows = state.report.sessions;
+                if (!rows.length) {
+                    document.getElementById("sessionList").innerHTML =
+                        '<p class="muted">No usage recorded yet. Usage appears here as soon as a model call completes.</p>';
+                    return;
+                }
+                const html =
+                    "<table><thead><tr>" +
+                    "<th>Session</th><th>Models</th><th class='num'>Calls</th><th class='num'>In</th><th class='num'>Out</th>" +
+                    "<th class='num'>Cache rd</th><th class='num'>AIU</th><th class='num'>AIU $</th><th class='num'>Rate $</th><th>Last activity</th>" +
+                    "</tr></thead><tbody>" +
+                    rows
+                        .map((s) => {
+                            const label = s.summary || s.repository || s.cwd || s.sessionId;
+                            const sub = [s.repository, s.branch].filter(Boolean).join(" · ");
+                            return (
+                                '<tr class="clickable" data-session="' +
+                                esc(s.sessionId) +
+                                '">' +
+                                "<td><div>" +
+                                esc(label) +
+                                "</div>" +
+                                (sub ? '<div class="muted mono">' + esc(sub) + "</div>" : "") +
+                                '<div class="muted mono">' +
+                                esc(s.sessionId.slice(0, 8)) +
+                                "</div></td>" +
+                                '<td class="mono">' +
+                                s.models.map(esc).join("<br>") +
+                                "</td>" +
+                                '<td class="num">' +
+                                fmtInt(s.calls) +
+                                "</td>" +
+                                '<td class="num">' +
+                                fmtTok(s.inputTokens) +
+                                "</td>" +
+                                '<td class="num">' +
+                                fmtTok(s.outputTokens) +
+                                "</td>" +
+                                '<td class="num">' +
+                                fmtTok(s.cacheReadTokens) +
+                                "</td>" +
+                                '<td class="num">' +
+                                fmtAiu(s.aiu) +
+                                "</td>" +
+                                '<td class="num">' +
+                                fmtUsd(s.aiuCost) +
+                                "</td>" +
+                                '<td class="num">' +
+                                (s.unpriced ? '<span class="pill warn">n/a</span>' : fmtUsd(s.tokenCost)) +
+                                "</td>" +
+                                "<td>" +
+                                esc(shortTime(s.lastAt)) +
+                                "</td></tr>"
+                            );
+                        })
+                        .join("") +
+                    "</tbody></table>";
+                document.getElementById("sessionList").innerHTML = html;
+                document.querySelectorAll("tr.clickable[data-session]").forEach((tr) => {
+                    tr.addEventListener("click", () => openSession(tr.dataset.session));
+                });
+            }
+
+            async function openSession(id) {
+                const detail = await api("/api/session/" + encodeURIComponent(id));
+                state.openSession = id;
+                const el = document.getElementById("sessionDetail");
+                const meta = detail.meta || {};
+                const t = detail.totals;
+                el.innerHTML =
+                    '<div class="row"><button id="closeDetail">&larr; All sessions</button>' +
+                    "<strong>" +
+                    esc(meta.summary || meta.repository || id) +
+                    "</strong>" +
+                    '<span class="muted mono">' +
+                    esc(id) +
+                    "</span></div>" +
+                    '<div class="cards">' +
+                    [
+                        ["Calls", fmtInt(t.calls)],
+                        ["Input", fmtInt(t.inputTokens)],
+                        ["Output", fmtInt(t.outputTokens)],
+                        ["Reasoning", fmtInt(t.reasoningTokens)],
+                        ["AIU", fmtAiu(t.aiu)],
+                        ["AIU $", fmtUsd(t.aiuCost)],
+                        ["Rate $", fmtUsd(t.tokenCost)],
+                    ]
+                        .map((c) => '<div class="card"><div class="label">' + c[0] + '</div><div class="value">' + c[1] + "</div></div>")
+                        .join("") +
+                    "</div>" +
+                    "<table><thead><tr><th>When</th><th>Model</th><th>Effort</th><th>Agent</th><th class='num'>In</th><th class='num'>Out</th>" +
+                    "<th class='num'>Cache rd</th><th class='num'>Cache wr</th><th class='num'>Reason</th><th class='num'>AIU</th><th class='num'>AIU $</th><th class='num'>Rate $</th><th class='num'>ms</th><th>Src</th></tr></thead><tbody>" +
+                    detail.records
+                        .map(
+                            (r) =>
+                                "<tr><td>" +
+                                esc(shortTime(r.timestamp)) +
+                                '</td><td class="mono">' +
+                                esc(r.model) +
+                                "</td><td>" +
+                                esc(r.effort) +
+                                "</td><td>" +
+                                esc(r.initiator || (r.agentId ? "sub-agent" : "")) +
+                                '</td><td class="num">' +
+                                fmtInt(r.inputTokens) +
+                                '</td><td class="num">' +
+                                fmtInt(r.outputTokens) +
+                                '</td><td class="num">' +
+                                fmtInt(r.cacheReadTokens) +
+                                '</td><td class="num">' +
+                                fmtInt(r.cacheWriteTokens) +
+                                '</td><td class="num">' +
+                                fmtInt(r.reasoningTokens) +
+                                '</td><td class="num">' +
+                                fmtAiu(r.cost.aiu) +
+                                '</td><td class="num">' +
+                                fmtUsd(r.cost.aiuCost) +
+                                '</td><td class="num">' +
+                                (r.cost.priced ? fmtUsd(r.cost.tokenCost) : '<span class="muted">—</span>') +
+                                '</td><td class="num">' +
+                                fmtInt(r.durationMs) +
+                                '</td><td class="muted">' +
+                                esc(r.source) +
+                                "</td></tr>",
+                        )
+                        .join("") +
+                    "</tbody></table>";
+                el.classList.remove("hidden");
+                document.getElementById("sessionList").classList.add("hidden");
+                document.getElementById("closeDetail").addEventListener("click", () => {
+                    state.openSession = null;
+                    el.classList.add("hidden");
+                    document.getElementById("sessionList").classList.remove("hidden");
+                });
+            }
+
+            function renderModels() {
+                const rows = state.report.models;
+                document.getElementById("tab-models").innerHTML = !rows.length
+                    ? '<p class="muted">No usage recorded yet.</p>'
+                    : "<table><thead><tr><th>Provider</th><th>Model</th><th>Effort</th><th class='num'>Sessions</th><th class='num'>Calls</th>" +
+                      "<th class='num'>In</th><th class='num'>Out</th><th class='num'>Cache rd</th><th class='num'>Reason</th><th class='num'>AIU</th>" +
+                      "<th class='num'>AIU $</th><th class='num'>Rate $</th></tr></thead><tbody>" +
+                      rows
+                          .map(
+                              (m) =>
+                                  "<tr><td>" +
+                                  esc(m.provider) +
+                                  '</td><td class="mono">' +
+                                  esc(m.model) +
+                                  "</td><td>" +
+                                  esc(m.effort) +
+                                  '</td><td class="num">' +
+                                  fmtInt(m.sessionCount) +
+                                  '</td><td class="num">' +
+                                  fmtInt(m.calls) +
+                                  '</td><td class="num">' +
+                                  fmtTok(m.inputTokens) +
+                                  '</td><td class="num">' +
+                                  fmtTok(m.outputTokens) +
+                                  '</td><td class="num">' +
+                                  fmtTok(m.cacheReadTokens) +
+                                  '</td><td class="num">' +
+                                  fmtTok(m.reasoningTokens) +
+                                  '</td><td class="num">' +
+                                  fmtAiu(m.aiu) +
+                                  '</td><td class="num">' +
+                                  fmtUsd(m.aiuCost) +
+                                  '</td><td class="num">' +
+                                  (m.priced ? fmtUsd(m.tokenCost) : '<span class="pill warn">unpriced</span>') +
+                                  "</td></tr>",
+                          )
+                          .join("") +
+                      "</tbody></table>";
+            }
+
+            function renderRates() {
+                document.getElementById("usdPerAiu").value = state.card.usdPerAiu || 0;
+                document.getElementById("cacheIncluded").checked = Boolean(state.card.cacheTokensIncludedInInput);
+                const rows = state.card.entries;
+                document.getElementById("ratesTable").innerHTML =
+                    "<table><thead><tr><th>Provider</th><th>Model</th><th>Effort</th><th class='num'>Input /1M</th><th class='num'>Output /1M</th>" +
+                    "<th class='num'>Cache read /1M</th><th class='num'>Cache write /1M</th><th class='num'>Reasoning /1M</th><th>Notes</th><th></th></tr></thead><tbody>" +
+                    (rows.length
+                        ? rows
+                              .map(
+                                  (e, i) =>
+                                      '<tr data-idx="' +
+                                      i +
+                                      '">' +
+                                      '<td><input data-f="provider" value="' + esc(e.provider) + '" /></td>' +
+                                      '<td><input data-f="model" value="' + esc(e.model) + '" /></td>' +
+                                      '<td><input data-f="effort" value="' + esc(e.effort) + '" /></td>' +
+                                      '<td><input data-f="input" type="number" step="0.01" value="' + esc(e.input) + '" /></td>' +
+                                      '<td><input data-f="output" type="number" step="0.01" value="' + esc(e.output) + '" /></td>' +
+                                      '<td><input data-f="cacheRead" type="number" step="0.01" value="' + esc(e.cacheRead) + '" /></td>' +
+                                      '<td><input data-f="cacheWrite" type="number" step="0.01" value="' + esc(e.cacheWrite) + '" /></td>' +
+                                      '<td><input data-f="reasoning" type="number" step="0.01" value="' +
+                                      (e.reasoning === null ? "" : esc(e.reasoning)) +
+                                      '" /></td>' +
+                                      '<td><input data-f="notes" value="' + esc(e.notes) + '" /></td>' +
+                                      '<td><button class="danger" data-del="' + i + '">Delete</button></td></tr>',
+                              )
+                              .join("")
+                        : '<tr><td colspan="10" class="muted">No rates yet. Add a row, or use “Add models seen in usage”.</td></tr>') +
+                    "</tbody></table>";
+
+                document.querySelectorAll('#ratesTable input').forEach((input) => {
+                    input.addEventListener("change", () => {
+                        const idx = Number(input.closest("tr").dataset.idx);
+                        const field = input.dataset.f;
+                        let value = input.value;
+                        if (["input", "output", "cacheRead", "cacheWrite"].includes(field)) value = Number(value) || 0;
+                        if (field === "reasoning") value = input.value === "" ? null : Number(input.value) || 0;
+                        state.card.entries[idx][field] = value;
+                    });
+                });
+                document.querySelectorAll("#ratesTable button[data-del]").forEach((btn) => {
+                    btn.addEventListener("click", () => {
+                        state.card.entries.splice(Number(btn.dataset.del), 1);
+                        renderRates();
+                    });
+                });
+            }
+
+            function renderOtel() {
+                const o = state.otel;
+                const st = o.status;
+                const envRows = Object.entries(st.env);
+                const spans = o.spans;
+                document.getElementById("tab-otel").innerHTML =
+                    '<div class="row">' +
+                    (st.active
+                        ? '<span class="pill ok">OpenTelemetry active in this process</span>'
+                        : '<span class="pill warn">OpenTelemetry not enabled in this process</span>') +
+                    "</div>" +
+                    '<div class="note">OTel is configured by environment variables read at CLI startup, so it cannot be switched on for a session that is already running. Set the variables below and relaunch.</div>' +
+                    "<h2>Environment</h2>" +
+                    (envRows.length
+                        ? "<table><tbody>" +
+                          envRows.map((kv) => '<tr><td class="mono">' + esc(kv[0]) + '</td><td class="mono">' + esc(kv[1]) + "</td></tr>").join("") +
+                          "</tbody></table>"
+                        : '<p class="muted">No OTel environment variables are set.</p>') +
+                    "<h2>Export to a local collector</h2><pre>" +
+                    esc(st.snippets.collector) +
+                    "</pre>" +
+                    "<h2>Export to a file (no collector needed)</h2><pre>" +
+                    esc(st.snippets.file) +
+                    "</pre>" +
+                    '<div class="row"><label style="flex:1">Ingest OTel JSON-lines file <input id="otelPath" value="' +
+                    esc(o.settings.otelFilePath || "") +
+                    '" placeholder="path to COPILOT_OTEL_FILE_EXPORTER_PATH output" /></label>' +
+                    '<button id="saveOtelPath" class="primary">Save</button></div>' +
+                    (st.file
+                        ? '<div class="note">' +
+                          esc(st.file.path) +
+                          " — " +
+                          (st.file.exists ? fmtInt(st.file.bytes) + " bytes, updated " + esc(shortTime(st.file.modifiedAt)) : "not found") +
+                          "</div>"
+                        : "") +
+                    "<h2>Spans</h2>" +
+                    (spans.available
+                        ? '<div class="note">' +
+                          fmtInt(spans.spanCount) +
+                          " spans &middot; " +
+                          fmtInt(spans.tokens.input) +
+                          " input / " +
+                          fmtInt(spans.tokens.output) +
+                          " output tokens attributed in traces</div>" +
+                          "<table><thead><tr><th>Span</th><th class='num'>Count</th><th class='num'>Total ms</th></tr></thead><tbody>" +
+                          spans.byName
+                              .map(
+                                  (n) =>
+                                      '<tr><td class="mono">' + esc(n.name) + '</td><td class="num">' + fmtInt(n.count) + '</td><td class="num">' + fmtInt(n.totalMs) + "</td></tr>",
+                              )
+                              .join("") +
+                          "</tbody></table>" +
+                          (spans.tools.length
+                              ? "<h2>Tool executions</h2><table><thead><tr><th>Tool</th><th class='num'>Calls</th><th class='num'>Total ms</th></tr></thead><tbody>" +
+                                spans.tools
+                                    .map(
+                                        (t) =>
+                                            '<tr><td class="mono">' + esc(t.tool) + '</td><td class="num">' + fmtInt(t.count) + '</td><td class="num">' + fmtInt(t.totalMs) + "</td></tr>",
+                                    )
+                                    .join("") +
+                                "</tbody></table>"
+                              : "")
+                        : '<p class="muted">' + esc(spans.reason || "no span data") + "</p>");
+
+                const saveBtn = document.getElementById("saveOtelPath");
+                if (saveBtn) {
+                    saveBtn.addEventListener("click", async () => {
+                        const path = document.getElementById("otelPath").value.trim();
+                        await api("/api/settings", {
+                            method: "POST",
+                            headers: { "Content-Type": "application/json" },
+                            body: JSON.stringify({ otelFilePath: path }),
+                        });
+                        state.otel = await api("/api/otel");
+                        renderOtel();
+                        toast("Saved");
+                    });
+                }
+            }
+
+            function render() {
+                renderTotals();
+                if (state.tab === "sessions") renderSessions();
+                if (state.tab === "models") renderModels();
+                if (state.tab === "rates") renderRates();
+                if (state.tab === "otel") renderOtel();
+            }
+
+            document.querySelectorAll("nav.tabs button").forEach((btn) => {
+                btn.addEventListener("click", () => {
+                    state.tab = btn.dataset.tab;
+                    document.querySelectorAll("nav.tabs button").forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
+                    ["sessions", "models", "rates", "otel"].forEach((t) => {
+                        document.getElementById("tab-" + t).classList.toggle("hidden", t !== state.tab);
+                    });
+                    render();
+                });
+            });
+
+            document.getElementById("refreshBtn").addEventListener("click", async () => {
+                await load();
+                if (state.openSession) openSession(state.openSession);
+                toast("Refreshed");
+            });
+
+            document.getElementById("addRateBtn").addEventListener("click", () => {
+                state.card.entries.unshift({
+                    provider: "*",
+                    model: "",
+                    effort: "*",
+                    input: 0,
+                    output: 0,
+                    cacheRead: 0,
+                    cacheWrite: 0,
+                    reasoning: null,
+                    notes: "",
+                });
+                renderRates();
+            });
+
+            document.getElementById("seedBtn").addEventListener("click", async () => {
+                const res = await api("/api/ratecard/seed", { method: "POST" });
+                state.card = res.card;
+                renderRates();
+                toast(res.added + " row(s) added");
+            });
+
+            document.getElementById("saveRatesBtn").addEventListener("click", async () => {
+                state.card.usdPerAiu = Number(document.getElementById("usdPerAiu").value) || 0;
+                state.card.cacheTokensIncludedInInput = document.getElementById("cacheIncluded").checked;
+                await api("/api/ratecard", {
+                    method: "POST",
+                    headers: { "Content-Type": "application/json" },
+                    body: JSON.stringify(state.card),
+                });
+                await load();
+                state.tab = "rates";
+                renderRates();
+                toast("Rate card saved");
+            });
+
+            const es = new EventSource("/events");
+            es.addEventListener("open", () => {
+                document.getElementById("liveState").innerHTML = '<span class="live-dot"></span>live';
+            });
+            es.addEventListener("error", () => {
+                document.getElementById("liveState").innerHTML = '<span class="live-dot off"></span>reconnecting';
+            });
+            es.addEventListener("usage", async () => {
+                await load();
+                if (state.openSession) openSession(state.openSession);
+            });
+
+            function selectTab(name) {
+                const btn = document.querySelector('nav.tabs button[data-tab="' + name + '"]');
+                if (btn) btn.click();
+            }
+
+            load()
+                .then(() => {
+                    const params = new URLSearchParams(location.search);
+                    if (params.get("tab")) selectTab(params.get("tab"));
+                    if (params.get("sessionId")) openSession(params.get("sessionId"));
+                })
+                .catch((e) => toast("Load failed: " + e.message));
+        </script>
+    </body>
+</html>
