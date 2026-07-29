@@ -56,21 +56,33 @@ provider/model/effort combination observed, then fill in your own numbers.
 
 ## Installation
 
-The extension is a single directory of ES modules with no dependencies to install —
-`@github/copilot-sdk` is resolved by the CLI, and `node:sqlite` is built into Node 22+.
+See the [repository README](https://github.com/cicorias/gh-app-canvas-token-usage#installation-in-detail)
+for the full walkthrough. In short, the extension is a single directory of ES modules with no
+dependencies to install — `@github/copilot-sdk` is resolved by the CLI, and `node:sqlite` is
+built into Node 22+.
+
+### From this repository
+
+Ask the agent to install it, or use the `install_extension` tool with this folder URL:
+
+```
+https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage
+```
+
+### With the install script
+
+```sh
+git clone https://github.com/cicorias/gh-app-canvas-token-usage.git
+cd gh-app-canvas-token-usage
+./install.sh                            # user scope
+./install.sh --project /path/to/repo    # project scope
+./install.sh --session <session-id>      # session scope
+```
 
 ### From a gist
 
-In Copilot, run **Install extension from gist…** from the command palette, or ask the agent
-to install it. Choose the scope when prompted.
-
-### From a repository folder
-
-Ask the agent to install from the folder URL, or use the `install_extension` tool with:
-
-```
-https://github.com/<owner>/<repo>/tree/main/token-usage
-```
+Run **Install extension from gist…** from the Copilot command palette, or ask the agent to
+install it. Choose the scope when prompted.
 
 ### Manually
 
