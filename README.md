@@ -127,6 +127,9 @@ is always visible.
 - **Notes** — free text. Auto-added rows are stamped so you can spot what still needs prices.
 - **Delete** — removes the row.
 
+> Where do the prices come from? See [Rate card: where the numbers come from](#rate-card-where-the-numbers-come-from).
+> Short version: GitHub's own published rates, not the model vendor's, and USD-per-AIU is `0.01`.
+
 ### Telemetry tab
 
 ![Telemetry tab showing OpenTelemetry status and configuration snippets](docs/images/ghtoken-otel.png)
@@ -371,6 +374,143 @@ Copilot bills in **AI units**, not raw tokens, and usage rows carry `total_nano_
 > **Cache tokens.** In observed data, `inputTokens` already *includes* cache-read and
 > cache-write tokens, so the rate card defaults `cacheTokensIncludedInInput` to on and
 > subtracts them from billable input. Turn it off if your provider reports them separately.
+
+---
+
+## Rate card: where the numbers come from
+
+A fresh install ships an **empty** rate card, so every cost shows as `$0.00` until you fill it
+in. This section is the sourcing guide.
+
+> **Use GitHub's rates, not the model vendor's.** When you use Copilot you are billed *by
+> GitHub*, at GitHub's published per-token rates. Those are not the same as the list prices on
+> Anthropic's, OpenAI's or Google's own pricing pages — for several models they differ by a
+> large multiple. Pulling numbers from the vendor's site is the single easiest way to end up
+> with a confidently wrong cost column.
+
+**One source covers almost everything:**
+[Models and pricing for GitHub Copilot](https://docs.github.com/en/copilot/reference/copilot-billing/models-and-pricing)
+
+### Step 1 — set USD per AIU
+
+GitHub bills in **AI credits**, and the rate is fixed and documented:
+
+> 1 AI credit = $0.01 USD
+
+So set **USD per AI unit (AIU)** to `0.01`. This is the number that makes **Cost from AIU**
+real money, and it is the more trustworthy of the two cost columns, because AIU comes from
+Copilot's own metering rather than from anything modelled here.
+
+### Step 2 — add a row per model you actually use
+
+Click **Add models seen in usage**. That creates a zero-priced row for every
+provider/model/effort combination already in your history, so you only price what you use
+rather than transcribing an entire table.
+
+### Step 3 — fill the prices from GitHub's table
+
+Open the pricing page above, find your model, and map the columns:
+
+| Rate card field | GitHub pricing column | Notes |
+| --- | --- | --- |
+| **Input /1M** | Input | |
+| **Output /1M** | Output | |
+| **Cache read /1M** | Cached input | Typically 10% of input |
+| **Cache write /1M** | Cache write | Anthropic models only; leave `0` for everyone else, whose table has no such column |
+| **Reasoning /1M** | *(none)* | Leave **blank** — see below |
+
+All values are already per 1M tokens on both sides, so no conversion is needed.
+
+**Reasoning** has no column in GitHub's table because reasoning tokens are billed as output
+tokens. Leave it blank. Filling it in charges those tokens a second time on top of output.
+
+**Effort** is not priced by GitHub either — the rate is per model, not per reasoning effort.
+Leave it as `*` unless you are modelling a BYOK endpoint that genuinely charges differently.
+
+### Worked example
+
+For the two models in this repo's own history, both Anthropic:
+
+| Provider | Model | Effort | Input /1M | Output /1M | Cache read /1M | Cache write /1M | Reasoning |
+| --- | --- | --- | --- | --- | --- | --- | --- |
+| Anthropic | `claude-opus-5` | `*` | 5.00 | 25.00 | 0.50 | 6.25 | *(blank)* |
+| Anthropic | `claude-opus-4.8` | `*` | 5.00 | 25.00 | 0.50 | 6.25 | *(blank)* |
+
+Then **Save rate card**. Costs recompute immediately.
+
+Because every current Anthropic Opus model shares those rates, a single wildcard row —
+provider `Anthropic`, model `*`, effort `*` — covers them all and keeps working when a new
+Opus ships.
+
+### Verifying you got it right
+
+The two cost columns are computed from completely independent inputs: **Cost from AIU** comes
+from Copilot's metering, **Cost from rate card** from the prices you just typed. If both are
+correct they should converge.
+
+Priced exactly as above against this repo's own history, they agree to the cent:
+
+```
+AIU:             2395.50
+Cost from AIU:  $23.96
+Cost from card: $23.96
+difference:     $0.00 (0.0%)
+```
+
+That is the check to run after filling in the card. A large gap means one of the two is wrong,
+and the table below is where to look first.
+
+| Symptom | Likely cause |
+| --- | --- |
+| Card cost is `$0.00` | Rows exist but prices are still zero, or no row matches — check **Unpriced calls** |
+| Card cost is far *below* AIU cost | Missing cache-write price, or a model with no matching row |
+| Card cost is far *above* AIU cost | **Reasoning /1M** filled in (double-charging output), or `cacheTokensIncludedInInput` turned off when it should be on |
+| AIU cost is `$0.00` | USD per AIU still `0`; set it to `0.01` |
+
+### Long-context tiers are a known gap
+
+Several OpenAI, Google and xAI models are priced in two tiers — a default rate and a higher
+**Long context** rate that kicks in above an input-token threshold (for example 272K for
+GPT-5.5, 200K for Gemini 3.1 Pro). The rate card matches on provider/model/effort only and has
+no notion of a context threshold, so it cannot switch rates per call.
+
+Options, in order of preference:
+
+1. Price the tier you actually hit most, and treat the token estimate as approximate.
+2. Trust **Cost from AIU** instead for those models — it is metered, so tiering is already
+   baked in.
+
+Anthropic models have no tiering, so this does not affect the example above.
+
+### Cross-checking against reality
+
+Compare the canvas totals against what GitHub actually billed you:
+
+- **Personal** — <https://github.com/settings/billing>, then the usage view.
+- **Organization / enterprise** — Settings → Billing and licensing → Usage.
+
+If **Cost from AIU** does not line up, check your USD-per-AIU value first. If **Cost from rate
+card** is the one that is off, it is either a missing row (see **Unpriced calls** in the
+summary bar) or a long-context tier.
+
+Two things deliberately do not appear in either column:
+
+- **Code completions and next edit suggestions** are not billed in AI credits at all and are
+  unlimited on paid plans.
+- **Copilot code review** additionally consumes GitHub Actions minutes, which are billed
+  separately from tokens and are outside this canvas's scope.
+
+### BYOK and custom providers
+
+For a bring-your-own-key endpoint you are billed by that provider directly, so its own pricing
+page *is* the correct source. Add a row with the provider name you want and use `*` for the
+model to catch everything from it.
+
+### Keeping it current
+
+Model prices change and new models ship regularly. **Add models seen in usage** is the cheap
+way to notice drift: if a new model shows up in your history it appears as a zero-priced row,
+and the **Unpriced calls** counter in the summary bar tells you something is being under-counted.
 
 ---
 
