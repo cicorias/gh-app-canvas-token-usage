@@ -1,6 +1,7 @@
 import { existsSync, readFileSync, writeFileSync, statSync, renameSync } from "node:fs";
 import { join } from "node:path";
 import { artifactsDir } from "./paths.mjs";
+import { MANAGED_KEYS, VAR_INFO, configuredFilePath } from "./otelenv.mjs";
 
 /**
  * OpenTelemetry integration.
@@ -8,25 +9,24 @@ import { artifactsDir } from "./paths.mjs";
  * Copilot CLI activates OTel when COPILOT_OTEL_ENABLED=true, or when
  * OTEL_EXPORTER_OTLP_ENDPOINT or COPILOT_OTEL_FILE_EXPORTER_PATH is set. All of
  * those must be present in the environment *before* the CLI starts, so this
- * canvas can only report status and hand back the exact snippet to use — it
- * cannot enable OTel for the session it is running inside.
+ * module reports what the running process actually got; otelenv.mjs is what
+ * arranges for the *next* launch to get more.
  *
  * We only ingest the file exporter (JSON-lines). An OTLP collector would mean
  * running a receiver that outlives every session, for data the local stores
  * already give us.
+ *
+ * None of this feeds token accounting — usage totals come from
+ * session-store.db and live-usage.jsonl regardless of whether OTel is on.
  */
 
-const ENV_KEYS = [
-    "COPILOT_OTEL_ENABLED",
-    "OTEL_EXPORTER_OTLP_ENDPOINT",
-    "OTEL_EXPORTER_OTLP_PROTOCOL",
-    "COPILOT_OTEL_EXPORTER_TYPE",
-    "COPILOT_OTEL_FILE_EXPORTER_PATH",
-    "COPILOT_OTEL_SOURCE_NAME",
-    "OTEL_SERVICE_NAME",
-    "OTEL_RESOURCE_ATTRIBUTES",
-    "OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT",
-];
+const ENV_KEYS = [...new Set([...MANAGED_KEYS, "COPILOT_OTEL_EXPORTER_TYPE"])];
+const SECRET_KEYS = new Set(VAR_INFO.filter((v) => v.secret).map((v) => v.key));
+
+function maskSecret(key, value) {
+    if (!SECRET_KEYS.has(key) || !value) return value;
+    return value.length <= 8 ? "••••" : `${value.slice(0, 4)}••••${value.slice(-2)}`;
+}
 
 function settingsPath() {
     return join(artifactsDir(), "settings.json");
@@ -50,15 +50,21 @@ export function saveSettings(next) {
     return value;
 }
 
+/**
+ * Where to read spans from. An explicit override wins, then whatever the
+ * running CLI was actually told to write, then the path the settings tab would
+ * use on the next launch — so a freshly configured file path works without
+ * being typed twice.
+ */
 export function resolveOtelFilePath() {
     const settings = loadSettings();
-    return settings.otelFilePath || process.env.COPILOT_OTEL_FILE_EXPORTER_PATH || "";
+    return settings.otelFilePath || process.env.COPILOT_OTEL_FILE_EXPORTER_PATH || configuredFilePath() || "";
 }
 
 export function otelStatus() {
     const env = {};
     for (const key of ENV_KEYS) {
-        if (process.env[key] !== undefined) env[key] = process.env[key];
+        if (process.env[key] !== undefined) env[key] = maskSecret(key, process.env[key]);
     }
     const active =
         String(process.env.COPILOT_OTEL_ENABLED || "").toLowerCase() === "true" ||

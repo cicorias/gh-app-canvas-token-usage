@@ -209,6 +209,75 @@
             .live-dot.off {
                 background: var(--text-color-muted, #59636e);
             }
+            .banner {
+                border: 1px solid var(--border-color-default, #d1d9e0);
+                border-radius: 6px;
+                padding: 8px 11px;
+                margin: 10px 0;
+                font-size: var(--text-body-small, 12px);
+            }
+            .banner.warn {
+                border-color: var(--true-color-red-muted, rgba(207, 34, 46, 0.4));
+            }
+            .banner.ok {
+                border-color: var(--true-color-green-muted, rgba(26, 127, 55, 0.4));
+            }
+            .banner .banner-title {
+                font-weight: var(--font-weight-semibold, 600);
+                display: block;
+                margin-bottom: 2px;
+            }
+            .banner.warn .banner-title {
+                color: var(--true-color-red, #cf222e);
+            }
+            .field {
+                margin: 12px 0;
+            }
+            .field > .name {
+                display: flex;
+                gap: 8px;
+                align-items: baseline;
+                flex-wrap: wrap;
+            }
+            .field > .name .key {
+                font-family: var(--font-mono, monospace);
+                font-size: var(--text-code-inline, 12px);
+                color: var(--text-color-muted, #59636e);
+            }
+            .field .hint {
+                font-size: var(--text-body-small, 12px);
+                color: var(--text-color-muted, #59636e);
+                margin: 2px 0 5px;
+                max-width: 74ch;
+            }
+            .toggle {
+                display: flex;
+                gap: 8px;
+                align-items: flex-start;
+                margin: 10px 0;
+            }
+            .toggle input {
+                margin-top: 3px;
+            }
+            .toggle .copy strong {
+                font-weight: var(--font-weight-semibold, 600);
+            }
+            .group {
+                border: 1px solid var(--border-color-default, #d1d9e0);
+                border-radius: 8px;
+                padding: 4px 12px 12px;
+                margin: 12px 0;
+            }
+            .group.off {
+                opacity: 0.45;
+                pointer-events: none;
+            }
+            details.advanced summary {
+                cursor: pointer;
+                font-size: var(--text-body-small, 12px);
+                color: var(--text-color-muted, #59636e);
+                margin-top: 10px;
+            }
         </style>
     </head>
     <body>
@@ -227,6 +296,7 @@
             <button data-tab="models" aria-selected="false">Models</button>
             <button data-tab="rates" aria-selected="false">Rate card</button>
             <button data-tab="otel" aria-selected="false">Telemetry</button>
+            <button data-tab="settings" aria-selected="false">Settings</button>
         </nav>
 
         <section id="tab-sessions">
@@ -257,6 +327,8 @@
         </section>
 
         <section id="tab-otel" class="hidden"></section>
+
+        <section id="tab-settings" class="hidden"></section>
 
         <div id="toast" class="toast hidden"></div>
 
@@ -645,19 +717,219 @@
                 }
             }
 
+            function renderSettings() {
+                const o = state.otel;
+                const cfg = state.otelConfig;
+                const env = o.env;
+                const vars = o.vars;
+                const relevant = (v) =>
+                    v.key !== "COPILOT_OTEL_ENABLED" && (v.mode === "both" || v.mode === cfg.exporter);
+
+                const fieldHtml = (v) => {
+                    const value = cfg.vars[v.key] || "";
+                    let control;
+                    if (v.boolean) {
+                        control =
+                            '<label class="toggle"><input type="checkbox" data-var="' +
+                            esc(v.key) +
+                            '"' +
+                            (value === "true" ? " checked" : "") +
+                            '/><span class="copy">Enable</span></label>';
+                    } else if (v.choices) {
+                        control =
+                            '<select data-var="' +
+                            esc(v.key) +
+                            '">' +
+                            v.choices
+                                .map(
+                                    (c) =>
+                                        '<option value="' +
+                                        esc(c) +
+                                        '"' +
+                                        (c === value ? " selected" : "") +
+                                        ">" +
+                                        esc(c || "(CLI default)") +
+                                        "</option>",
+                                )
+                                .join("") +
+                            "</select>";
+                    } else {
+                        control =
+                            "<input " +
+                            (v.secret ? 'type="password" ' : "") +
+                            'data-var="' +
+                            esc(v.key) +
+                            '" value="' +
+                            esc(value) +
+                            '" placeholder="' +
+                            esc(v.placeholder || "") +
+                            '" />';
+                    }
+                    return (
+                        '<div class="field"><div class="name"><span>' +
+                        esc(v.label) +
+                        '</span><span class="key">' +
+                        esc(v.key) +
+                        '</span></div><div class="hint">' +
+                        esc(v.hint) +
+                        "</div>" +
+                        control +
+                        "</div>"
+                    );
+                };
+
+                const basic = vars.filter((v) => relevant(v) && !v.advanced);
+                const advanced = vars.filter((v) => relevant(v) && v.advanced);
+
+                const statusBanner = env.restartNeeded
+                    ? '<div class="banner warn"><span class="banner-title">Restart required</span>' +
+                      "The variables below are staged for the next launch. This session started without them, so quit GitHub Copilot completely and reopen it before telemetry changes take effect." +
+                      "</div>"
+                    : cfg.enabled
+                      ? '<div class="banner ok"><span class="banner-title">Applied</span>This session is running with the configuration below.</div>'
+                      : "";
+
+                const warnings = (env.warnings || [])
+                    .map((w) => '<div class="banner warn">' + esc(w) + "</div>")
+                    .join("");
+
+                const unsupported = env.supported
+                    ? ""
+                    : '<div class="banner warn"><span class="banner-title">' +
+                      esc(env.platform) +
+                      " is not macOS</span>" +
+                      "Applying to the login environment uses launchd, so it is macOS-only. Saving still writes an env file you can source from your shell profile or session environment." +
+                      "</div>";
+
+                document.getElementById("tab-settings").innerHTML =
+                    "<h2>OpenTelemetry export</h2>" +
+                    '<div class="note">Token usage, AI units and cost are always recorded from the local session stores — this section is independent of that and only adds OTel traces and metrics. Off by default.</div>' +
+                    '<label class="toggle"><input type="checkbox" id="otelEnabled"' +
+                    (cfg.enabled ? " checked" : "") +
+                    '/><span class="copy"><strong>Export OpenTelemetry from Copilot CLI</strong><br />' +
+                    '<span class="muted">The CLI reads these variables at startup. Because the app launches from Finder or the Dock it never sees your shell profile, so applying writes them into the macOS login environment instead.</span></span></label>' +
+                    unsupported +
+                    statusBanner +
+                    warnings +
+                    '<div class="group' +
+                    (cfg.enabled ? "" : " off") +
+                    '">' +
+                    "<h2>Destination</h2>" +
+                    '<label class="toggle"><input type="radio" name="otelExporter" value="file"' +
+                    (cfg.exporter === "file" ? " checked" : "") +
+                    '/><span class="copy"><strong>Write to a file</strong><br /><span class="muted">JSON-lines on disk. No collector to run, and the Telemetry tab reads it back.</span></span></label>' +
+                    '<label class="toggle"><input type="radio" name="otelExporter" value="otlp"' +
+                    (cfg.exporter === "otlp" ? " checked" : "") +
+                    '/><span class="copy"><strong>Send to an OTLP collector</strong><br /><span class="muted">Jaeger, Grafana, Honeycomb, Datadog, Azure Monitor and friends.</span></span></label>' +
+                    basic.map(fieldHtml).join("") +
+                    (advanced.length
+                        ? '<details class="advanced"><summary>Advanced</summary>' + advanced.map(fieldHtml).join("") + "</details>"
+                        : "") +
+                    "</div>" +
+                    '<div class="row"><button id="otelSave">Save</button>' +
+                    '<button id="otelApply" class="primary">Save &amp; apply to login environment</button>' +
+                    '<button id="otelRemove" class="danger">Remove from login environment</button></div>' +
+                    '<div class="note">Applying affects apps launched afterwards; already-running processes keep the environment they started with.</div>' +
+                    (env.rows.length
+                        ? "<h2>Current state</h2>" +
+                          '<div class="note">"This session" is what the running CLI actually received at startup. "Next launch" is what a newly started app will receive.</div>' +
+                          "<table><thead><tr><th>Variable</th><th>This session</th><th>Next launch</th><th>Staged</th></tr></thead><tbody>" +
+                          env.rows
+                              .map(
+                                  (r) =>
+                                      '<tr><td class="mono">' +
+                                      esc(r.key) +
+                                      '</td><td class="mono">' +
+                                      (r.process ? esc(r.process) : '<span class="muted">unset</span>') +
+                                      '</td><td class="mono">' +
+                                      (r.launchd ? esc(r.launchd) : '<span class="muted">unset</span>') +
+                                      "</td><td>" +
+                                      (r.matches ? '<span class="pill ok">live</span>' : '<span class="pill warn">on restart</span>') +
+                                      "</td></tr>",
+                              )
+                              .join("") +
+                          "</tbody></table>"
+                        : '<p class="muted">No OTel variables are set anywhere yet.</p>') +
+                    "<h2>Equivalent shell exports</h2>" +
+                    '<div class="note">For running <span class="mono">copilot</span> from a terminal, or for putting in a profile yourself.</div>' +
+                    "<pre>" +
+                    esc(env.snippet) +
+                    "</pre>" +
+                    (env.agentInstalled
+                        ? '<div class="note">A login agent is installed at <span class="mono">' +
+                          esc(env.plist) +
+                          "</span> so these survive a logout.</div>"
+                        : "");
+
+                function collect() {
+                    const next = { enabled: document.getElementById("otelEnabled").checked, exporter: cfg.exporter, vars: {} };
+                    // Keep values for the exporter that is not currently shown, so
+                    // toggling between file and collector is not destructive.
+                    for (const [k, v] of Object.entries(cfg.vars)) next.vars[k] = v;
+                    document.querySelectorAll("#tab-settings [data-var]").forEach((el) => {
+                        const key = el.dataset.var;
+                        const value = el.type === "checkbox" ? (el.checked ? "true" : "") : el.value.trim();
+                        if (value) next.vars[key] = value;
+                        else delete next.vars[key];
+                    });
+                    return next;
+                }
+
+                document.getElementById("otelEnabled").addEventListener("change", () => {
+                    state.otelConfig = collect();
+                    renderSettings();
+                });
+
+                document.querySelectorAll('#tab-settings input[name="otelExporter"]').forEach((el) => {
+                    el.addEventListener("change", () => {
+                        const next = collect();
+                        next.exporter = el.value;
+                        state.otelConfig = next;
+                        renderSettings();
+                    });
+                });
+
+                async function post(path, body) {
+                    state.otel = await api(path, {
+                        method: "POST",
+                        headers: { "Content-Type": "application/json" },
+                        body: JSON.stringify(body || {}),
+                    });
+                    state.otelConfig = state.otel.config;
+                    renderSettings();
+                }
+
+                document.getElementById("otelSave").addEventListener("click", async () => {
+                    await post("/api/otel/config", collect());
+                    toast("Saved — not applied yet");
+                });
+
+                document.getElementById("otelApply").addEventListener("click", async () => {
+                    await post("/api/otel/apply", collect());
+                    const r = state.otel.result;
+                    toast(r && r.ok ? "Applied — restart the app" : "Apply failed: " + ((r && r.reason) || "unknown"));
+                });
+
+                document.getElementById("otelRemove").addEventListener("click", async () => {
+                    await post("/api/otel/remove");
+                    toast("Removed from login environment");
+                });
+            }
+
             function render() {
                 renderTotals();
                 if (state.tab === "sessions") renderSessions();
                 if (state.tab === "models") renderModels();
                 if (state.tab === "rates") renderRates();
                 if (state.tab === "otel") renderOtel();
+                if (state.tab === "settings") renderSettings();
             }
 
             document.querySelectorAll("nav.tabs button").forEach((btn) => {
                 btn.addEventListener("click", () => {
                     state.tab = btn.dataset.tab;
                     document.querySelectorAll("nav.tabs button").forEach((b) => b.setAttribute("aria-selected", String(b === btn)));
-                    ["sessions", "models", "rates", "otel"].forEach((t) => {
+                    ["sessions", "models", "rates", "otel", "settings"].forEach((t) => {
                         document.getElementById("tab-" + t).classList.toggle("hidden", t !== state.tab);
                     });
                     render();
