@@ -278,6 +278,43 @@
                 color: var(--text-color-muted, #59636e);
                 margin-top: 10px;
             }
+            details.recipe {
+                border: 1px solid var(--border-color-default, #d1d9e0);
+                border-radius: 8px;
+                padding: 0 12px;
+                margin: 12px 0;
+            }
+            details.recipe > summary {
+                cursor: pointer;
+                font-weight: var(--font-weight-semibold, 600);
+                padding: 9px 0;
+            }
+            details.recipe[open] > summary {
+                border-bottom: 1px solid var(--border-color-muted, rgba(127, 127, 127, 0.2));
+                margin-bottom: 4px;
+            }
+            details.recipe > :last-child {
+                margin-bottom: 12px;
+            }
+            .step {
+                font-size: var(--text-body-medium, 14px);
+                font-weight: var(--font-weight-semibold, 600);
+                margin: 16px 0 2px;
+            }
+            .codeblock {
+                position: relative;
+            }
+            .codeblock > pre {
+                padding-right: 62px;
+            }
+            .codeblock > button.copy {
+                position: absolute;
+                top: 7px;
+                right: 7px;
+                padding: 1px 8px;
+                font-size: var(--text-body-small, 12px);
+                background: var(--background-color-default, #fff);
+            }
         </style>
     </head>
     <body>
@@ -333,7 +370,7 @@
         <div id="toast" class="toast hidden"></div>
 
         <script>
-            const state = { report: null, card: null, otel: null, tab: "sessions", openSession: null };
+            const state = { report: null, card: null, otel: null, otelConfig: null, tab: "sessions", openSession: null };
 
             const fmtInt = (n) => (n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
             const fmtTok = (n) => {
@@ -374,7 +411,19 @@
                 state.report = await api("/api/report");
                 state.card = JSON.parse(JSON.stringify(state.report.card));
                 state.otel = await api("/api/otel");
+                // Keep any in-progress edits: load() also runs on every live usage
+                // event, and clobbering the form mid-typing would be worse than stale.
+                if (!state.otelConfig) state.otelConfig = cloneOtelConfig(state.otel.config);
                 render();
+            }
+
+            function cloneOtelConfig(config) {
+                const base = config && typeof config === "object" ? config : {};
+                return {
+                    enabled: Boolean(base.enabled),
+                    exporter: base.exporter === "otlp" ? "otlp" : "file",
+                    vars: Object.assign({}, base.vars),
+                };
             }
 
             function renderTotals() {
@@ -648,13 +697,13 @@
                         ? '<span class="pill ok">OpenTelemetry active in this process</span>'
                         : '<span class="pill warn">OpenTelemetry not enabled in this process</span>') +
                     "</div>" +
-                    '<div class="note">OTel is configured by environment variables read at CLI startup, so it cannot be switched on for a session that is already running. Set the variables below and relaunch.</div>' +
+                    '<div class="note">OTel is configured by environment variables read at CLI startup, so it cannot be switched on for a session that is already running. Configure it on the Settings tab, or set the variables below yourself, then relaunch.</div>' +
                     "<h2>Environment</h2>" +
                     (envRows.length
                         ? "<table><tbody>" +
                           envRows.map((kv) => '<tr><td class="mono">' + esc(kv[0]) + '</td><td class="mono">' + esc(kv[1]) + "</td></tr>").join("") +
                           "</tbody></table>"
-                        : '<p class="muted">No OTel environment variables are set.</p>') +
+                        : '<p class="muted">No OTel environment variables are set for this process. That is the default — use the Settings tab to stage them for the next launch.</p>') +
                     "<h2>Export to a local collector</h2><pre>" +
                     esc(st.snippets.collector) +
                     "</pre>" +
@@ -719,6 +768,7 @@
 
             function renderSettings() {
                 const o = state.otel;
+                if (!state.otelConfig) state.otelConfig = cloneOtelConfig(o && o.config);
                 const cfg = state.otelConfig;
                 const env = o.env;
                 const vars = o.vars;
@@ -780,6 +830,94 @@
 
                 const basic = vars.filter((v) => relevant(v) && !v.advanced);
                 const advanced = vars.filter((v) => relevant(v) && v.advanced);
+                const advancedOpen = advanced.some((v) => cfg.vars[v.key]);
+
+                const certsDir = ((o && o.artifactsDir) || "$HOME/.copilot/extensions/token-usage/artifacts") + "/aspire-certs";
+                const aspireSettings = {
+                    OTEL_EXPORTER_OTLP_ENDPOINT: "https://localhost:4318",
+                    OTEL_EXPORTER_OTLP_PROTOCOL: "http/protobuf",
+                    OTEL_EXPORTER_OTLP_CERTIFICATE: certsDir + "/ca.crt",
+                };
+                const code = (text) =>
+                    '<div class="codeblock"><button class="copy">Copy</button><pre>' + esc(text) + "</pre></div>";
+
+                const certScript = [
+                    'CERTS="' + certsDir + '"',
+                    'mkdir -p "$CERTS" && cd "$CERTS"',
+                    "",
+                    "# 1a. A local certificate authority.",
+                    "openssl req -x509 -newkey rsa:2048 -sha256 -days 825 -nodes \\",
+                    '  -keyout ca.key -out ca.crt -subj "/CN=Copilot local OTLP CA" \\',
+                    '  -addext "basicConstraints=critical,CA:TRUE,pathlen:0" \\',
+                    '  -addext "keyUsage=critical,keyCertSign,cRLSign"',
+                    "",
+                    "# 1b. A server certificate for localhost, signed by that CA.",
+                    "openssl req -newkey rsa:2048 -sha256 -nodes \\",
+                    '  -keyout otlp.key -out otlp.csr -subj "/CN=localhost"',
+                    "",
+                    "cat > leaf.ext <<'EOF'",
+                    "basicConstraints=critical,CA:FALSE",
+                    "keyUsage=critical,digitalSignature,keyEncipherment",
+                    "extendedKeyUsage=serverAuth",
+                    "subjectAltName=DNS:localhost,IP:127.0.0.1,IP:::1",
+                    "EOF",
+                    "",
+                    "openssl x509 -req -in otlp.csr -CA ca.crt -CAkey ca.key -CAcreateserial \\",
+                    "  -out otlp.crt -days 825 -sha256 -extfile leaf.ext",
+                    "",
+                    "cat otlp.crt ca.crt > otlp-fullchain.crt",
+                ].join("\n");
+
+                const dockerScript = [
+                    "docker run --rm -d --name aspire-dashboard \\",
+                    "  -p 18888:18888 -p 4318:18890 \\",
+                    '  -v "' + certsDir + ':/certs:ro" \\',
+                    "  -e ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT_URL='https://+:18890' \\",
+                    "  -e ASPNETCORE_Kestrel__Certificates__Default__Path=/certs/otlp-fullchain.crt \\",
+                    "  -e ASPNETCORE_Kestrel__Certificates__Default__KeyPath=/certs/otlp.key \\",
+                    "  mcr.microsoft.com/dotnet/aspire-dashboard:latest",
+                ].join("\n");
+
+                const loginScript =
+                    "docker logs aspire-dashboard 2>&1 | grep -o 'http://localhost:18888/login?t=[a-f0-9]*' | head -1";
+
+                const settingsRows = [
+                    ["Export OpenTelemetry", "on"],
+                    ["Destination", "Send to an OTLP collector"],
+                    ["OTLP endpoint", aspireSettings.OTEL_EXPORTER_OTLP_ENDPOINT],
+                    ["OTLP protocol", aspireSettings.OTEL_EXPORTER_OTLP_PROTOCOL],
+                    ["CA certificate (under Advanced)", aspireSettings.OTEL_EXPORTER_OTLP_CERTIFICATE],
+                ];
+
+                const logsDir = ((o && o.artifactsDir) || "").replace(/\/extensions\/token-usage\/artifacts$/, "/logs");
+
+                const aspireRecipe =
+                    '<details class="recipe"><summary>Recipe: run the Aspire dashboard locally</summary>' +
+                    '<div class="note">The .NET Aspire dashboard is a single container that receives OTLP and renders traces and metrics. It needs no account and keeps everything in memory, which makes it a good local target for Copilot telemetry.</div>' +
+                    '<div class="banner warn"><span class="banner-title">It has to be reached over https</span>' +
+                    'Copilot disables OTLP export rather than send it over cleartext <span class="mono">http://</span>, and only whispers about it in the CLI log — so Aspire\'s documented <span class="mono">http://localhost:4318</span> quickstart looks fine and delivers nothing. The steps below put TLS on the dashboard\'s OTLP/HTTP port and hand Copilot the CA to trust.' +
+                    "</div>" +
+                    '<div class="step">1. Create a CA and a server certificate</div>' +
+                    code(certScript) +
+                    '<div class="note">One plain self-signed certificate is not enough: Copilot exports through a Rust TLS stack that rejects a CA certificate presented as the server\'s own leaf. The two-certificate chain above is what makes it work.</div>' +
+                    '<div class="step">2. Start the dashboard</div>' +
+                    code(dockerScript) +
+                    '<div class="note">Host port 18888 serves the UI over plain http, which is fine for a browser. Host port 4318 maps to the container\'s OTLP/HTTP port 18890, now served over TLS. The gRPC port is deliberately left unmapped — Copilot does not support <span class="mono">grpc</span> and only warns before falling back.</div>' +
+                    '<div class="step">3. Open the dashboard</div>' +
+                    '<div class="note">The UI is protected by a browser token printed to the container log.</div>' +
+                    code(loginScript) +
+                    '<div class="step">4. Point Copilot at it</div>' +
+                    "<table><tbody>" +
+                    settingsRows
+                        .map((r) => "<tr><td>" + esc(r[0]) + '</td><td class="mono">' + esc(r[1]) + "</td></tr>")
+                        .join("") +
+                    "</tbody></table>" +
+                    '<div class="row"><button id="aspireFill" class="primary">Fill in these settings</button>' +
+                    '<span class="muted">then Save &amp; apply below, and restart the app.</span></div>' +
+                    '<div class="note">After a new session runs, its traces show up under <span class="mono">invoke_agent</span>. If the dashboard stays empty, grep the CLI log in <span class="mono">' +
+                    esc(logsDir || "$COPILOT_HOME/logs") +
+                    '</span> for <span class="mono">rust:otel</span> — a TLS or connection failure is reported there and nowhere else.</div>' +
+                    "</details>";
 
                 const statusBanner = env.restartNeeded
                     ? '<div class="banner warn"><span class="banner-title">Restart required</span>' +
@@ -823,9 +961,14 @@
                     '/><span class="copy"><strong>Send to an OTLP collector</strong><br /><span class="muted">Jaeger, Grafana, Honeycomb, Datadog, Azure Monitor and friends.</span></span></label>' +
                     basic.map(fieldHtml).join("") +
                     (advanced.length
-                        ? '<details class="advanced"><summary>Advanced</summary>' + advanced.map(fieldHtml).join("") + "</details>"
+                        ? '<details class="advanced"' +
+                          (advancedOpen ? " open" : "") +
+                          "><summary>Advanced</summary>" +
+                          advanced.map(fieldHtml).join("") +
+                          "</details>"
                         : "") +
                     "</div>" +
+                    aspireRecipe +
                     '<div class="row"><button id="otelSave">Save</button>' +
                     '<button id="otelApply" class="primary">Save &amp; apply to login environment</button>' +
                     '<button id="otelRemove" class="danger">Remove from login environment</button></div>' +
@@ -895,8 +1038,39 @@
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(body || {}),
                     });
-                    state.otelConfig = state.otel.config;
+                    state.otelConfig = cloneOtelConfig(state.otel.config);
                     renderSettings();
+                }
+
+                document.querySelectorAll("#tab-settings .codeblock > button.copy").forEach((btn) => {
+                    btn.addEventListener("click", async () => {
+                        const text = btn.parentElement.querySelector("pre").textContent;
+                        try {
+                            await navigator.clipboard.writeText(text);
+                            toast("Copied");
+                        } catch {
+                            const pre = btn.parentElement.querySelector("pre");
+                            const range = document.createRange();
+                            range.selectNodeContents(pre);
+                            const sel = window.getSelection();
+                            sel.removeAllRanges();
+                            sel.addRange(range);
+                            toast("Selected — press ⌘C");
+                        }
+                    });
+                });
+
+                const aspireFill = document.getElementById("aspireFill");
+                if (aspireFill) {
+                    aspireFill.addEventListener("click", () => {
+                        const next = collect();
+                        next.enabled = true;
+                        next.exporter = "otlp";
+                        Object.assign(next.vars, aspireSettings);
+                        state.otelConfig = next;
+                        renderSettings();
+                        toast("Filled in — save & apply, then restart");
+                    });
                 }
 
                 document.getElementById("otelSave").addEventListener("click", async () => {
@@ -918,11 +1092,29 @@
 
             function render() {
                 renderTotals();
-                if (state.tab === "sessions") renderSessions();
-                if (state.tab === "models") renderModels();
-                if (state.tab === "rates") renderRates();
-                if (state.tab === "otel") renderOtel();
-                if (state.tab === "settings") renderSettings();
+                const renderers = {
+                    sessions: renderSessions,
+                    models: renderModels,
+                    rates: renderRates,
+                    otel: renderOtel,
+                    settings: renderSettings,
+                };
+                const fn = renderers[state.tab];
+                if (!fn) return;
+                try {
+                    fn();
+                } catch (err) {
+                    // A blank panel is the worst possible failure mode here: it looks
+                    // like a feature that does nothing rather than a bug.
+                    const el = document.getElementById("tab-" + state.tab);
+                    if (el) {
+                        el.innerHTML =
+                            '<div class="banner warn"><span class="banner-title">This tab failed to render</span>' +
+                            esc(String((err && err.message) || err)) +
+                            "</div>";
+                    }
+                    throw err;
+                }
             }
 
             document.querySelectorAll("nav.tabs button").forEach((btn) => {
