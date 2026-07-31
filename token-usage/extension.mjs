@@ -16,6 +16,7 @@ import { fileURLToPath } from "node:url";
 import { dirname, join } from "node:path";
 import { joinSession, createCanvas, CanvasError } from "@github/copilot-sdk/extension";
 
+import { artifactsDir } from "./paths.mjs";
 import { buildReport, sessionDetail } from "./aggregate.mjs";
 import { loadRateCard, saveRateCard, seedMissingEntries, normalizeEffort, inferProvider } from "./ratecard.mjs";
 import { recordLiveUsage } from "./live.mjs";
@@ -73,6 +74,7 @@ function otelPayload() {
         env: loginEnvStatus(config),
         vars: VAR_INFO,
         defaultFilePath: defaultFilePath(),
+        artifactsDir: artifactsDir(),
     };
 }
 
