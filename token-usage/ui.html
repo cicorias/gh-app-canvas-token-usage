@@ -333,7 +333,7 @@
         <div id="toast" class="toast hidden"></div>
 
         <script>
-            const state = { report: null, card: null, otel: null, tab: "sessions", openSession: null };
+            const state = { report: null, card: null, otel: null, otelConfig: null, tab: "sessions", openSession: null };
 
             const fmtInt = (n) => (n || 0).toLocaleString(undefined, { maximumFractionDigits: 0 });
             const fmtTok = (n) => {
@@ -374,7 +374,19 @@
                 state.report = await api("/api/report");
                 state.card = JSON.parse(JSON.stringify(state.report.card));
                 state.otel = await api("/api/otel");
+                // Keep any in-progress edits: load() also runs on every live usage
+                // event, and clobbering the form mid-typing would be worse than stale.
+                if (!state.otelConfig) state.otelConfig = cloneOtelConfig(state.otel.config);
                 render();
+            }
+
+            function cloneOtelConfig(config) {
+                const base = config && typeof config === "object" ? config : {};
+                return {
+                    enabled: Boolean(base.enabled),
+                    exporter: base.exporter === "otlp" ? "otlp" : "file",
+                    vars: Object.assign({}, base.vars),
+                };
             }
 
             function renderTotals() {
@@ -648,13 +660,13 @@
                         ? '<span class="pill ok">OpenTelemetry active in this process</span>'
                         : '<span class="pill warn">OpenTelemetry not enabled in this process</span>') +
                     "</div>" +
-                    '<div class="note">OTel is configured by environment variables read at CLI startup, so it cannot be switched on for a session that is already running. Set the variables below and relaunch.</div>' +
+                    '<div class="note">OTel is configured by environment variables read at CLI startup, so it cannot be switched on for a session that is already running. Configure it on the Settings tab, or set the variables below yourself, then relaunch.</div>' +
                     "<h2>Environment</h2>" +
                     (envRows.length
                         ? "<table><tbody>" +
                           envRows.map((kv) => '<tr><td class="mono">' + esc(kv[0]) + '</td><td class="mono">' + esc(kv[1]) + "</td></tr>").join("") +
                           "</tbody></table>"
-                        : '<p class="muted">No OTel environment variables are set.</p>') +
+                        : '<p class="muted">No OTel environment variables are set for this process. That is the default — use the Settings tab to stage them for the next launch.</p>') +
                     "<h2>Export to a local collector</h2><pre>" +
                     esc(st.snippets.collector) +
                     "</pre>" +
@@ -719,6 +731,7 @@
 
             function renderSettings() {
                 const o = state.otel;
+                if (!state.otelConfig) state.otelConfig = cloneOtelConfig(o && o.config);
                 const cfg = state.otelConfig;
                 const env = o.env;
                 const vars = o.vars;
@@ -895,7 +908,7 @@
                         headers: { "Content-Type": "application/json" },
                         body: JSON.stringify(body || {}),
                     });
-                    state.otelConfig = state.otel.config;
+                    state.otelConfig = cloneOtelConfig(state.otel.config);
                     renderSettings();
                 }
 
@@ -918,11 +931,29 @@
 
             function render() {
                 renderTotals();
-                if (state.tab === "sessions") renderSessions();
-                if (state.tab === "models") renderModels();
-                if (state.tab === "rates") renderRates();
-                if (state.tab === "otel") renderOtel();
-                if (state.tab === "settings") renderSettings();
+                const renderers = {
+                    sessions: renderSessions,
+                    models: renderModels,
+                    rates: renderRates,
+                    otel: renderOtel,
+                    settings: renderSettings,
+                };
+                const fn = renderers[state.tab];
+                if (!fn) return;
+                try {
+                    fn();
+                } catch (err) {
+                    // A blank panel is the worst possible failure mode here: it looks
+                    // like a feature that does nothing rather than a bug.
+                    const el = document.getElementById("tab-" + state.tab);
+                    if (el) {
+                        el.innerHTML =
+                            '<div class="banner warn"><span class="banner-title">This tab failed to render</span>' +
+                            esc(String((err && err.message) || err)) +
+                            "</div>";
+                    }
+                    throw err;
+                }
             }
 
             document.querySelectorAll("nav.tabs button").forEach((btn) => {
