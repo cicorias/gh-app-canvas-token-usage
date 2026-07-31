@@ -2,3 +2,26 @@ node_modules/
 .DS_Store
 *.tmp
 .impeccable/
+
+# Locally generated TLS material for the OTLP examples. These are per-developer
+# and must never be committed — otlp.key and ca.key are real private keys even
+# though they only ever protect localhost.
+.otel-certs/
+*.crt
+*.key
+*.csr
+*.srl
+*.pem
+*.pfx
+
+# Per-developer tooling and environment overrides.
+mise.local.toml
+.mise.local.toml
+.env
+.env.*
+!.env.example
+
+# Python, for the uv-managed helper scripts.
+.venv/
+__pycache__/
+*.pyc

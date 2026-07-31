@@ -6,6 +6,9 @@ with a rate card you can edit and persist by provider, model and reasoning effor
 Repo: [`cicorias/gh-app-canvas-token-usage`](https://github.com/cicorias/gh-app-canvas-token-usage) ·
 Extension source: [`token-usage/`](token-usage/)
 
+📝 Background and walkthrough:
+[**Metering the Agent: a Copilot CLI canvas extension for token usage**](https://www.cicoria.com/metering-the-agent-a-copilot-cli-canvas-extension-for-token-usage/)
+
 ---
 
 ## Quick start
@@ -178,6 +181,10 @@ is always visible.
 - **Warnings** — surfaced inline, notably that Copilot disables OTLP export over cleartext
   `http://` (including the default `http://localhost:4318`) rather than sending it
   unencrypted, and only logs a warning. Use an `https://` collector or the file exporter.
+- **Run a local collector** — a built-in recipe for the .NET Aspire dashboard over TLS, with
+  a button that fills in the matching settings. Scripted and parameterised versions of the
+  same recipe (bash and PowerShell, plus mise tasks) live in
+  [`examples/otel/`](examples/otel/).
 
 ### From chat
 

@@ -1,0 +1,25 @@
+# Run `mise tasks` to list these. Implementations live in `examples/otel/`;
+# the tasks below are only pointers so this file stays readable.
+
+[tools]
+# verify-otlp.py is a PEP-723 script - uv reads its inline dependency block and
+# builds a throwaway environment, so nothing lands in a global site-packages.
+uv = "latest"
+# Only needed if you want to exercise the .ps1 variants on macOS or Linux.
+# powershell = "latest"
+
+[tasks."otel:certs"]
+description = "Generate the local CA + server certificate for OTLP over TLS"
+file = "scripts/otel-certs.sh"
+
+[tasks."otel:up"]
+description = "Start the Aspire dashboard with a TLS OTLP endpoint"
+file = "scripts/otel-up.sh"
+
+[tasks."otel:down"]
+description = "Stop the Aspire dashboard"
+file = "scripts/otel-down.sh"
+
+[tasks."otel:verify"]
+description = "Send one real span over TLS and confirm it was accepted"
+file = "scripts/otel-verify.sh"
