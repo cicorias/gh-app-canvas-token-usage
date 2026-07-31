@@ -4,16 +4,22 @@
 #   ./install.sh                      -> user scope ($COPILOT_HOME/extensions)
 #   ./install.sh --project /path/repo -> project scope (<repo>/.github/extensions)
 #   ./install.sh --session <id>       -> session scope
+#   ./install.sh --ref <branch|tag>   -> source ref when downloading (default: main)
+#
+# One command, no clone:
+#   curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh
+#   curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh -s -- --project /path/repo
 #
 set -eu
 
 NAME="token-usage"
-SRC="$(CDPATH='' cd -- "$(dirname -- "$0")/$NAME" && pwd)"
+REPO="cicorias/gh-app-canvas-token-usage"
 COPILOT_HOME="${COPILOT_HOME:-$HOME/.copilot}"
 
 scope="user"
 target_repo=""
 session_id=""
+ref="main"
 
 while [ $# -gt 0 ]; do
     case "$1" in
@@ -31,8 +37,16 @@ while [ $# -gt 0 ]; do
             session_id="${2:-}"
             shift 2 || shift
             ;;
+        --ref)
+            ref="${2:-main}"
+            shift 2 || shift
+            ;;
         -h | --help)
-            sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'
+            if [ -f "${0:-}" ]; then
+                sed -n '2,12p' "$0" | sed 's/^# \{0,1\}//'
+            else
+                echo "usage: install.sh [--user | --project <repo> | --session <id>] [--ref <branch|tag>]"
+            fi
             exit 0
             ;;
         *)
@@ -54,9 +68,30 @@ case "$scope" in
         ;;
 esac
 
-if [ ! -f "$SRC/extension.mjs" ]; then
-    echo "source not found: $SRC/extension.mjs" >&2
-    exit 1
+# Prefer a sibling source folder (running from a clone); otherwise download the repo.
+SRC=""
+script_dir="$(CDPATH='' cd -- "$(dirname -- "${0:-.}")" 2>/dev/null && pwd || true)"
+if [ -n "$script_dir" ] && [ -f "$script_dir/$NAME/extension.mjs" ]; then
+    SRC="$script_dir/$NAME"
+fi
+
+TMP=""
+cleanup() {
+    if [ -n "$TMP" ]; then rm -rf "$TMP"; fi
+}
+trap cleanup EXIT INT TERM
+
+if [ -z "$SRC" ]; then
+    command -v curl >/dev/null 2>&1 || { echo "curl is required" >&2; exit 1; }
+    command -v tar >/dev/null 2>&1 || { echo "tar is required" >&2; exit 1; }
+    echo "downloading $REPO@$ref ..."
+    TMP="$(mktemp -d)"
+    curl -fsSL "https://codeload.github.com/$REPO/tar.gz/refs/heads/$ref" | tar -xzf - -C "$TMP"
+    SRC="$(find "$TMP" -maxdepth 2 -type d -name "$NAME" | head -n 1)"
+    if [ -z "$SRC" ] || [ ! -f "$SRC/extension.mjs" ]; then
+        echo "could not find $NAME/extension.mjs in the downloaded archive" >&2
+        exit 1
+    fi
 fi
 
 # Node 22+ is required for the built-in node:sqlite module.

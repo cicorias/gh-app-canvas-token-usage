@@ -10,19 +10,23 @@ Extension source: [`token-usage/`](token-usage/)
 
 ## Quick start
 
-**1. Install** (pick one — the folder-URL route is easiest):
-
-Ask Copilot:
-
-> Install the extension from `https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage`
-
-or from a clone:
+**1. Install** — one command, no clone:
 
 ```sh
-git clone https://github.com/cicorias/gh-app-canvas-token-usage.git
-cd gh-app-canvas-token-usage
-./install.sh
+# bash / zsh / sh — macOS, Linux, WSL
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh
 ```
+
+```powershell
+# PowerShell 5.1+ / PowerShell 7+ — Windows, macOS, Linux
+irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1 | iex
+```
+
+Both install to **user scope** by default. See
+[Installation in detail](#installation-in-detail) for project and session scopes, or ask
+Copilot:
+
+> Install the extension from `https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage`
 
 **2. Reload** — ask Copilot to reload extensions, or restart the CLI.
 
@@ -176,7 +180,46 @@ not add a `package.json` or `node_modules`.
 > A **project**-scope copy shadows a **user**-scope copy of the same name — the user one is
 > dropped at discovery time. Don't install both.
 
-### Option 1 — from this repository (recommended)
+### Option 1 — one command (recommended)
+
+The install scripts work either piped from the network or run from a clone. With no
+arguments they install to **user scope**.
+
+```sh
+# bash / zsh / sh
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh
+
+# project scope — note the `-s --` that forwards arguments to the piped script
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh -s -- --project /path/to/repo
+
+# session scope, or a specific branch/tag
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh -s -- --session <session-id>
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh -s -- --ref v1.2.3
+```
+
+```powershell
+# PowerShell
+irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1 | iex
+
+# with arguments — `iex` can't take parameters, so run it as a script block
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1))) -Project C:\path\to\repo
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1))) -Session <session-id>
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1))) -Ref v1.2.3
+```
+
+| `install.sh` | `install.ps1` | Effect |
+| --- | --- | --- |
+| `--user` (default) | `-User` (default) | install into `$COPILOT_HOME/extensions/` |
+| `--project <repo>` | `-Project <repo>` | install into `<repo>/.github/extensions/` |
+| `--session <id>` | `-Session <id>` | install into that session's `extensions/` |
+| `--ref <branch\|tag>` | `-Ref <branch\|tag>` | source ref to download (default `main`) |
+
+Both scripts warn if Node is older than 22 and print the destination they used. When a
+`token-usage/` folder sits next to the script — i.e. you cloned the repo — that local copy is
+installed and nothing is downloaded. Piping shell scripts from the internet runs remote code;
+read [`install.sh`](install.sh) / [`install.ps1`](install.ps1) first if that matters to you.
+
+### Option 2 — ask Copilot
 
 Ask Copilot to install it, or use the `install_extension` tool, with this folder URL:
 
@@ -184,10 +227,10 @@ Ask Copilot to install it, or use the `install_extension` tool, with this folder
 https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage
 ```
 
-You'll be asked which scope to install into. This is the best route for other people:
-versioned, reviewable, and easy to update by re-running the install.
+You'll be asked which scope to install into. Versioned, reviewable, and easy to update by
+re-running the install.
 
-### Option 2 — install script
+### Option 3 — from a clone
 
 ```sh
 git clone https://github.com/cicorias/gh-app-canvas-token-usage.git
@@ -198,9 +241,13 @@ cd gh-app-canvas-token-usage
 ./install.sh --session <session-id>      # current session only
 ```
 
-The script warns if Node is older than 22 and prints the destination it used.
+```powershell
+./install.ps1                           # user scope (default)
+./install.ps1 -Project C:\path\to\repo
+./install.ps1 -Session <session-id>
+```
 
-### Option 3 — vendor it into your team's repo
+### Option 4 — vendor it into your team's repo
 
 ```sh
 mkdir -p /path/to/repo/.github/extensions
@@ -211,11 +258,11 @@ Commit it, and everyone working in that repo gets the canvas with **no install s
 Discovery only scans immediate subdirectories of `.github/extensions/`, so keep the folder
 exactly one level deep.
 
-### Option 4 — private gist
+### Option 5 — private gist
 
 Run **Share extension as gist…** from the Copilot command palette (or use the
 `share_extension` tool), then **Install extension from gist…** on the other machine. Good for
-syncing your own machines; use options 1–3 for teams, since a gist isn't reviewable or
+syncing your own machines; use options 1–4 for teams, since a gist isn't reviewable or
 versioned.
 
 ### Manual copy
@@ -333,7 +380,8 @@ outliving every session, for data the local stores already provide.
 
 ```
 .
-├── install.sh                   user / project / session installer
+├── install.sh                   POSIX sh installer (local or curl-piped)
+├── install.ps1                  PowerShell installer (local or irm-piped)
 └── token-usage/
     ├── copilot-extension.json   manifest (required for gist install)
     ├── extension.mjs            wiring: joinSession, canvas, HTTP server, SSE

@@ -61,6 +61,19 @@ for the full walkthrough. In short, the extension is a single directory of ES mo
 dependencies to install — `@github/copilot-sdk` is resolved by the CLI, and `node:sqlite` is
 built into Node 22+.
 
+### One command
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1 | iex
+```
+
+User scope by default; pass `--project <repo>` / `--session <id>` (or `-Project` / `-Session`
+in PowerShell) for the other scopes.
+
 ### From this repository
 
 Ask the agent to install it, or use the `install_extension` tool with this folder URL:
@@ -69,7 +82,7 @@ Ask the agent to install it, or use the `install_extension` tool with this folde
 https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage
 ```
 
-### With the install script
+### With the install script from a clone
 
 ```sh
 git clone https://github.com/cicorias/gh-app-canvas-token-usage.git
