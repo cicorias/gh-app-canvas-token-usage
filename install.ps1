@@ -30,8 +30,8 @@ Set-StrictMode -Version Latest
 
 $Name = 'token-usage'
 $Repo = 'cicorias/gh-app-canvas-token-usage'
-$Files = @('aggregate.mjs', 'extension.mjs', 'live.mjs', 'otel.mjs', 'paths.mjs',
-    'ratecard.mjs', 'usagedb.mjs', 'ui.html', 'copilot-extension.json', 'README.md')
+# Glob rather than a fixed list, so new modules are picked up automatically.
+$Patterns = @('*.mjs', 'ui.html', 'copilot-extension.json', 'README.md')
 
 $copilotHome = if ($env:COPILOT_HOME) { $env:COPILOT_HOME } else { Join-Path $HOME '.copilot' }
 
@@ -76,10 +76,14 @@ try {
     }
 
     New-Item -ItemType Directory -Path $dest -Force | Out-Null
-    foreach ($f in $Files) {
-        $path = Join-Path $src $f
-        if (Test-Path $path) { Copy-Item -Path $path -Destination $dest -Force }
+    $copied = 0
+    foreach ($p in $Patterns) {
+        Get-ChildItem -Path (Join-Path $src $p) -File -ErrorAction SilentlyContinue | ForEach-Object {
+            Copy-Item -Path $_.FullName -Destination $dest -Force
+            $copied++
+        }
     }
+    if ($copied -eq 0) { throw "no files copied from $src" }
 
     Write-Host "installed $Name -> $dest"
     Write-Host 'reload extensions or restart the CLI, then open the "Token usage & spend" canvas.'
