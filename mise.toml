@@ -46,3 +46,4 @@ run_windows = "pwsh -NoProfile -File ./scripts/otel-down.ps1"
 description = "Send one real span over TLS and confirm it was accepted"
 run = "./scripts/otel-verify.sh"
 run_windows = "pwsh -NoProfile -File ./scripts/otel-verify.ps1"
+
