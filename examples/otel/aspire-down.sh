@@ -4,6 +4,9 @@
 
 set -euo pipefail
 
+HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
+COMPOSE_FILE="$HERE/compose-aspire.yaml"
 NAME="aspire-dashboard"
 RUNTIME=""
 PURGE_CERTS=0
@@ -16,6 +19,8 @@ Usage: aspire-down.sh [options]
 Options:
   -n, --name NAME       Container name. Default: aspire-dashboard
   -r, --runtime NAME    docker or podman. Default: whichever is found.
+  -c, --compose-file F  Compose file to use. Default: compose-aspire.yaml
+                        next to this script.
       --purge-certs     Also delete the certificate directory.
   -d, --cert-dir DIR    Certificate directory for --purge-certs.
                         Default: $OTEL_CERT_DIR, else ./.otel-certs
@@ -36,6 +41,10 @@ while [ $# -gt 0 ]; do
             ;;
         -r | --runtime)
             RUNTIME="$2"
+            shift 2
+            ;;
+        -c | --compose-file)
+            COMPOSE_FILE="$2"
             shift 2
             ;;
         -d | --cert-dir)
@@ -61,11 +70,18 @@ if [ -z "$RUNTIME" ]; then
 fi
 
 if [ -n "$RUNTIME" ] && "$RUNTIME" info >/dev/null 2>&1; then
-    # `rm -f` exits 0 for a container that does not exist, so ask first rather
-    # than claiming to have stopped something that was never there.
+    # shellcheck source=compose.sh
+    . "$HERE/compose.sh"
+    resolve_compose "$RUNTIME" || exit 1
+    [ -f "$COMPOSE_FILE" ] || die "compose file not found: $COMPOSE_FILE"
+
+    # `down` tears the stack down whether or not it is running, so check first
+    # rather than claiming to have stopped something that was never there.
     if "$RUNTIME" ps -a --filter "name=^${NAME}$" --format '{{.Names}}' 2>/dev/null |
         grep -qx "$NAME"; then
-        "$RUNTIME" rm -f "$NAME" >/dev/null 2>&1 || die "failed to remove '$NAME'"
+        export ASPIRE_NAME="$NAME"
+        compose "$COMPOSE_FILE" "$NAME" down --remove-orphans >/dev/null 2>&1 ||
+            die "failed to stop '$NAME'"
         echo "Stopped '$NAME'."
     else
         echo "'$NAME' is not running."

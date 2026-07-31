@@ -30,12 +30,19 @@ Two details that are easy to get wrong and cost real debugging time:
 
 ## Quick start
 
-With [mise](https://mise.jdx.dev):
+With [mise](https://mise.jdx.dev), one command does everything — certificates,
+the dashboard over TLS, and a real span to prove it works:
 
 ```sh
-mise run otel:up        # certificates + dashboard, prints the settings and login URL
-mise run otel:verify    # sends one real span over TLS and confirms it was accepted
-mise run otel:down      # stop
+mise run start        # alias for otel:start
+mise run otel:down    # stop
+```
+
+Individually: `otel:certs`, `otel:up`, `otel:verify`, `otel:down`. Arguments pass
+through after `--`:
+
+```sh
+mise run otel:up -- --otlp-port 4319 --force
 ```
 
 Or call the scripts directly — they have no dependency on mise:
@@ -74,13 +81,40 @@ OTEL_CERT_DIR=~/.otel/certs ./examples/otel/aspire-up.sh
 The only real constraints: Docker needs an absolute host path (the scripts resolve
 it for you), and the container has to be able to *read* the key.
 
+## Which variant should I use?
+
+The cross-platform artifact is `compose-aspire.yaml` — the container definition is
+identical on macOS, Linux and Windows. The scripts around it only generate
+certificates, wait for the listener, and print the settings.
+
+Use whatever your platform already has. Windows ships PowerShell and no bash;
+macOS and Linux ship bash and rarely have pwsh. The mise tasks pick for you via
+`run` / `run_windows`, so `mise run start` is the same command everywhere.
+
+`pwsh` is the more portable of the two if you want a single script — it runs on all
+three platforms and mise can install it (`powershell = "latest"`) — but there is no
+reason to prefer it on a machine that already has bash.
+
+To drive Compose by hand, without either wrapper:
+
+```sh
+export OTEL_CERT_DIR="$PWD/.otel-certs"
+./examples/otel/otel-certs.sh --cert-dir "$OTEL_CERT_DIR"
+docker compose -f examples/otel/compose-aspire.yaml up -d
+```
+
+`ASPIRE_NAME`, `ASPIRE_UI_PORT`, `ASPIRE_OTLP_PORT` and `ASPIRE_IMAGE` override the
+rest. `docker compose` and the standalone `docker-compose` / `podman-compose` binaries
+are both detected.
+
 ## Scripts
 
 | Script | Purpose |
 | --- | --- |
 | `otel-certs.sh` / `.ps1` | Generate the CA and server certificate. Idempotent. |
-| `aspire-up.sh` / `.ps1` | Generate certs if needed, start the dashboard, wait for the TLS listener, print settings. |
-| `aspire-down.sh` / `.ps1` | Stop it. `--purge-certs` also deletes the certificates. |
+| `aspire-up.sh` / `.ps1` | Generate certs if needed, `compose up`, wait for the TLS listener, print settings. |
+| `aspire-down.sh` / `.ps1` | `compose down`. `--purge-certs` also deletes the certificates. |
+| `compose-aspire.yaml` | The dashboard itself. Everything in it is environment-overridable. |
 | `aspire-login-url.sh` / `.ps1` | Re-print the dashboard login URL (the token is logged only once, at startup). |
 | `verify-otlp.py` | Send one real span end to end. |
 
@@ -91,6 +125,11 @@ Common options (bash `--kebab-case`, PowerShell `-PascalCase`):
 - `--host` / `-CertHost` — extra SAN entries, repeatable. Add
   `host.docker.internal` if something inside a container needs to reach the dashboard.
 - `--relax-key-perms` / `-RelaxKeyPerms` — see below.
+- `--compose-file` / `-ComposeFile` — use a different Compose file.
+
+The Compose project name is pinned to the container name rather than derived from the
+directory, so a second dashboard on other ports (`--name aspire-alt --otlp-port 4319`)
+is a separate stack instead of a collision.
 
 ### Re-run behaviour
 

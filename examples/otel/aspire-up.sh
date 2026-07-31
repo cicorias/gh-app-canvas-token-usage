@@ -24,12 +24,7 @@ FORCE=0
 SKIP_CERTS=0
 CERT_ARGS=()
 
-# Where the certificates are mounted *inside* the container. Nothing depends on
-# this value; it just has to match the two Kestrel paths below.
-CONTAINER_CERT_DIR="/certs"
-
-# The dashboard's own OTLP/HTTP port inside the container.
-CONTAINER_OTLP_PORT=18890
+COMPOSE_FILE="$HERE/compose-aspire.yaml"
 
 usage() {
     cat <<'EOF'
@@ -48,6 +43,8 @@ Options:
   -i, --image REF       Container image. Default:
                         mcr.microsoft.com/dotnet/aspire-dashboard:latest
   -r, --runtime NAME    docker or podman. Default: whichever is found.
+  -c, --compose-file F  Compose file to use. Default: compose-aspire.yaml
+                        next to this script.
   -H, --host NAME       Extra hostname for the certificate. Repeatable.
                         Passed through to otel-certs.sh.
       --relax-key-perms Passed through to otel-certs.sh. Needed only when a
@@ -101,6 +98,11 @@ while [ $# -gt 0 ]; do
             RUNTIME="$2"
             shift 2
             ;;
+        -c | --compose-file)
+            [ $# -ge 2 ] || die "$1 requires a value"
+            COMPOSE_FILE="$2"
+            shift 2
+            ;;
         -H | --host)
             [ $# -ge 2 ] || die "$1 requires a value"
             CERT_ARGS+=(--host "$2")
@@ -138,6 +140,11 @@ fi
 command -v "$RUNTIME" >/dev/null 2>&1 || die "$RUNTIME not found on PATH"
 "$RUNTIME" info >/dev/null 2>&1 || die "$RUNTIME is installed but not running"
 
+# shellcheck source=compose.sh
+. "$HERE/compose.sh"
+resolve_compose "$RUNTIME"
+[ -f "$COMPOSE_FILE" ] || die "compose file not found: $COMPOSE_FILE"
+
 if [ "$SKIP_CERTS" -eq 0 ]; then
     [ "$FORCE" -eq 1 ] && CERT_ARGS+=(--force)
     "$HERE/otel-certs.sh" --cert-dir "$CERT_DIR" ${CERT_ARGS[@]+"${CERT_ARGS[@]}"} >/dev/null
@@ -155,20 +162,21 @@ if "$RUNTIME" ps --filter "name=^${NAME}$" --format '{{.Names}}' | grep -qx "$NA
         "$HERE/aspire-login-url.sh" --name "$NAME" --runtime "$RUNTIME" --ui-port "$UI_PORT" || true
         exit 0
     fi
-    "$RUNTIME" rm -f "$NAME" >/dev/null
-else
-    # A stopped container of the same name would block the run below.
-    "$RUNTIME" rm -f "$NAME" >/dev/null 2>&1 || true
 fi
 
-"$RUNTIME" run --rm -d --name "$NAME" \
-    -p "${UI_PORT}:18888" \
-    -p "${OTLP_PORT}:${CONTAINER_OTLP_PORT}" \
-    -v "${CERT_DIR}:${CONTAINER_CERT_DIR}:ro" \
-    -e ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT_URL="https://+:${CONTAINER_OTLP_PORT}" \
-    -e ASPNETCORE_Kestrel__Certificates__Default__Path="${CONTAINER_CERT_DIR}/otlp-fullchain.crt" \
-    -e ASPNETCORE_Kestrel__Certificates__Default__KeyPath="${CONTAINER_CERT_DIR}/otlp.key" \
-    "$IMAGE" >/dev/null
+# Compose reads all of these from the environment; see compose-aspire.yaml.
+export OTEL_CERT_DIR="$CERT_DIR"
+export ASPIRE_NAME="$NAME"
+export ASPIRE_UI_PORT="$UI_PORT"
+export ASPIRE_OTLP_PORT="$OTLP_PORT"
+export ASPIRE_IMAGE="$IMAGE"
+
+up_args=(up --detach)
+# Without this, compose leaves a container whose config has not changed alone,
+# so --force would silently do nothing.
+[ "$FORCE" -eq 1 ] && up_args+=(--force-recreate)
+
+compose "$COMPOSE_FILE" "$NAME" "${up_args[@]}" >/dev/null
 
 # Wait for the TLS listener to come up rather than guessing with sleep.
 ready=0
@@ -202,7 +210,7 @@ fi
 cat <<EOF
 
 Aspire dashboard is running.
-  container   $NAME ($RUNTIME)
+  container   $NAME ($COMPOSE_DESC)
   UI          http://localhost:${UI_PORT}
   OTLP/HTTP   https://localhost:${OTLP_PORT}   (TLS, protobuf)
 

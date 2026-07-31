@@ -1,25 +1,48 @@
-# Run `mise tasks` to list these. Implementations live in `examples/otel/`;
-# the tasks below are only pointers so this file stays readable.
+# Run `mise tasks` to list these. The implementations live in examples/otel/;
+# the tasks below only point at thin wrappers in scripts/ so this file stays
+# readable.
+#
+# Every leaf task has a run_windows variant. Windows has no bash, and
+# macOS/Linux rarely have pwsh, so each platform gets the shell it actually
+# ships with. The container definition itself
+# (examples/otel/compose-aspire.yaml) is shared and identical everywhere.
 
 [tools]
 # verify-otlp.py is a PEP-723 script - uv reads its inline dependency block and
 # builds a throwaway environment, so nothing lands in a global site-packages.
 uv = "latest"
-# Only needed if you want to exercise the .ps1 variants on macOS or Linux.
+# Uncomment to exercise the .ps1 variants on macOS or Linux.
 # powershell = "latest"
+
+[tasks."otel:start"]
+description = "One command: certificates, dashboard over TLS, then prove a span lands"
+alias = "start"
+# Three explicit phases rather than one opaque script, so a failure tells you
+# which one broke. Delegating to the tasks rather than the scripts keeps this
+# platform-neutral - each one already knows how to run itself on Windows.
+# otel:up re-checks the certificates, but that is a no-op when they are fine.
+run = [
+    "mise run otel:certs",
+    "mise run otel:up",
+    "mise run otel:verify",
+]
 
 [tasks."otel:certs"]
 description = "Generate the local CA + server certificate for OTLP over TLS"
-file = "scripts/otel-certs.sh"
+run = "./scripts/otel-certs.sh"
+run_windows = "pwsh -NoProfile -File ./scripts/otel-certs.ps1"
 
 [tasks."otel:up"]
 description = "Start the Aspire dashboard with a TLS OTLP endpoint"
-file = "scripts/otel-up.sh"
+run = "./scripts/otel-up.sh"
+run_windows = "pwsh -NoProfile -File ./scripts/otel-up.ps1"
 
 [tasks."otel:down"]
 description = "Stop the Aspire dashboard"
-file = "scripts/otel-down.sh"
+run = "./scripts/otel-down.sh"
+run_windows = "pwsh -NoProfile -File ./scripts/otel-down.ps1"
 
 [tasks."otel:verify"]
 description = "Send one real span over TLS and confirm it was accepted"
-file = "scripts/otel-verify.sh"
+run = "./scripts/otel-verify.sh"
+run_windows = "pwsh -NoProfile -File ./scripts/otel-verify.ps1"

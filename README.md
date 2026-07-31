@@ -183,8 +183,9 @@ is always visible.
   unencrypted, and only logs a warning. Use an `https://` collector or the file exporter.
 - **Run a local collector** — a built-in recipe for the .NET Aspire dashboard over TLS, with
   a button that fills in the matching settings. Scripted and parameterised versions of the
-  same recipe (bash and PowerShell, plus mise tasks) live in
-  [`examples/otel/`](examples/otel/).
+  same recipe live in [`examples/otel/`](examples/otel/) — a Compose file plus bash and
+  PowerShell wrappers. With [mise](https://mise.jdx.dev), `mise run start` does the
+  certificates, the dashboard and a real test span in one command, on any platform.
 
 ### From chat
 

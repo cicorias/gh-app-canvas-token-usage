@@ -7,12 +7,16 @@
 param(
     [Alias('n')][string]$Name = 'aspire-dashboard',
     [Alias('r')][string]$Runtime,
+    [Alias('c')][string]$ComposeFile,
     [Alias('d')][string]$CertDir = $(if ($env:OTEL_CERT_DIR) { $env:OTEL_CERT_DIR } else { './.otel-certs' }),
     [switch]$PurgeCerts
 )
 
 $ErrorActionPreference = 'Stop'
 $PSNativeCommandUseErrorActionPreference = $false
+
+$here = Split-Path -Parent $PSCommandPath
+if (-not $ComposeFile) { $ComposeFile = Join-Path $here 'compose-aspire.yaml' }
 
 if (-not $Runtime) {
     foreach ($candidate in @('docker', 'podman')) {
@@ -23,13 +27,19 @@ if (-not $Runtime) {
 if ($Runtime) {
     & $Runtime info 2>&1 | Out-Null
     if ($LASTEXITCODE -eq 0) {
-        # `rm -f` exits 0 for a container that does not exist, so ask first
-        # rather than claiming to have stopped something that was never there.
+        . (Join-Path $here 'compose.ps1')
+        Resolve-Compose -Runtime $Runtime
+        if (-not (Test-Path -LiteralPath $ComposeFile)) { throw "Compose file not found: $ComposeFile" }
+
+        # `down` tears the stack down whether or not it is running, so check
+        # first rather than claiming to have stopped something that was never
+        # there.
         $existing = (& $Runtime ps -a --filter "name=^$Name$" --format '{{.Names}}' 2>&1) -split "`n" |
             Where-Object { $_ -eq $Name }
         if ($existing) {
-            & $Runtime rm -f $Name 2>&1 | Out-Null
-            if ($LASTEXITCODE -ne 0) { throw "Failed to remove '$Name'." }
+            $env:ASPIRE_NAME = $Name
+            Invoke-Compose -File $ComposeFile -Project $Name -ComposeArgs @('down', '--remove-orphans') 2>&1 | Out-Null
+            if ($LASTEXITCODE -ne 0) { throw "Failed to stop '$Name'." }
             Write-Host "Stopped '$Name'."
         }
         else {
