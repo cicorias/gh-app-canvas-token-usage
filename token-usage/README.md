@@ -14,6 +14,7 @@ effort.
 | **Models** | Rollup by provider × model × reasoning effort. |
 | **Rate card** | Editable prices per 1M tokens (input, output, cache read, cache write, reasoning) plus a global USD-per-AIU rate. Persisted to disk. |
 | **Telemetry** | Live OpenTelemetry status, the exact env-var snippets to enable it, and ingestion of the OTel file exporter's JSON-lines output. |
+| **Settings** | Turn Copilot's OpenTelemetry export on for the next launch, with per-variable hints. Off by default; independent of token accounting. |
 
 ## Where the data comes from
 
@@ -61,6 +62,19 @@ for the full walkthrough. In short, the extension is a single directory of ES mo
 dependencies to install — `@github/copilot-sdk` is resolved by the CLI, and `node:sqlite` is
 built into Node 22+.
 
+### One command
+
+```sh
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh
+```
+
+```powershell
+irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1 | iex
+```
+
+User scope by default; pass `--project <repo>` / `--session <id>` (or `-Project` / `-Session`
+in PowerShell) for the other scopes.
+
 ### From this repository
 
 Ask the agent to install it, or use the `install_extension` tool with this folder URL:
@@ -69,7 +83,7 @@ Ask the agent to install it, or use the `install_extension` tool with this folde
 https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage
 ```
 
-### With the install script
+### With the install script from a clone
 
 ```sh
 git clone https://github.com/cicorias/gh-app-canvas-token-usage.git
@@ -109,6 +123,10 @@ any repo:
 | `rate-card.json` | Rate card entries, USD-per-AIU, cache-accounting flag |
 | `live-usage.jsonl` | Captured `assistant.usage` events |
 | `settings.json` | Path to an OTel file-exporter JSONL to ingest |
+| `otel-env.json` | Saved OpenTelemetry settings (off by default) |
+| `otel.env` | The same settings as `KEY=VALUE`, mode `600`, for sourcing from a shell |
+| `otel-env-launchagent.sh` | Replays those variables into the launchd GUI domain at login |
+| `otel.jsonl` | Default file-exporter destination, when that mode is used |
 
 This path is used regardless of which scope the extension itself is installed at, so a
 project-scope install never writes pricing data into the repo.
@@ -124,12 +142,22 @@ The canvas exposes these to the agent via `invoke_canvas_action`:
 | `set_rate` | Create or update a single rate card entry |
 | `seed_rate_card` | Add zero-priced rows for every unpriced model seen |
 | `otel_status` | OTel environment, snippets and ingested span summary |
+| `configure_otel` | Turn OTel export on or off for future launches, and apply it to the login environment |
 | `refresh` | Re-read the stores and push an update to the open canvas |
 
 ## Enabling OpenTelemetry
 
-OTel is configured by environment variables read at CLI startup, so it cannot be switched on
-for a session that is already running — set these and relaunch.
+OTel is **off by default** and never feeds token accounting — usage and cost come from the
+local stores either way.
+
+It is configured by environment variables read at CLI startup, so it cannot be switched on for
+a session that is already running. The desktop app launches from Finder or the Dock and so
+never sees your shell profile. The **Settings** tab handles that on macOS by writing the
+variables into the launchd GUI domain (`launchctl setenv`), which is what LaunchServices hands
+to app launches, plus a LaunchAgent (`com.github.copilot.token-usage.otel-env`) so they
+survive a logout. Apply, then fully quit and reopen the app.
+
+To run `copilot` from a terminal instead:
 
 ```sh
 # Local collector
@@ -144,6 +172,10 @@ OTEL_SERVICE_NAME=github-copilot
 COPILOT_OTEL_FILE_EXPORTER_PATH="$HOME/.copilot/extensions/token-usage/artifacts/otel.jsonl"
 OTEL_SERVICE_NAME=github-copilot
 ```
+
+Note that Copilot disables OTLP export over cleartext `http://` (including the default
+`http://localhost:4318`) rather than sending it unencrypted, and only logs a warning. Use an
+`https://` collector or the file exporter.
 
 ## Requirements
 
@@ -161,6 +193,7 @@ token-usage/
 ├── usagedb.mjs              read-only session-store.db reader
 ├── live.mjs                 assistant.usage capture and JSONL store
 ├── otel.mjs                 OTel env detection, settings, JSONL ingest
+├── otelenv.mjs              OTel desired-state config + launchd login environment
 ├── paths.mjs                COPILOT_HOME and artifact path resolution
 └── ui.html                  canvas renderer
 ```

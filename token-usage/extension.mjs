@@ -20,6 +20,15 @@ import { buildReport, sessionDetail } from "./aggregate.mjs";
 import { loadRateCard, saveRateCard, seedMissingEntries, normalizeEffort, inferProvider } from "./ratecard.mjs";
 import { recordLiveUsage } from "./live.mjs";
 import { otelStatus, summarizeOtel, loadSettings, saveSettings } from "./otel.mjs";
+import {
+    VAR_INFO,
+    defaultFilePath,
+    loadOtelConfig,
+    saveOtelConfig,
+    loginEnvStatus,
+    applyToLoginEnv,
+    removeFromLoginEnv,
+} from "./otelenv.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const UI_PATH = join(HERE, "ui.html");
@@ -55,7 +64,16 @@ async function readBody(req) {
 }
 
 function otelPayload() {
-    return { status: otelStatus(), settings: loadSettings(), spans: summarizeOtel() };
+    const config = loadOtelConfig();
+    return {
+        status: otelStatus(),
+        settings: loadSettings(),
+        spans: summarizeOtel(),
+        config,
+        env: loginEnvStatus(config),
+        vars: VAR_INFO,
+        defaultFilePath: defaultFilePath(),
+    };
 }
 
 function seedFromUsage() {
@@ -147,6 +165,28 @@ async function handleRequest(req, res) {
         return;
     }
 
+    // Saving records intent only. Nothing reaches the environment until
+    // /api/otel/apply, because the two have very different blast radius.
+    if (req.method === "POST" && path === "/api/otel/config") {
+        saveOtelConfig(await readBody(req));
+        sendJson(res, 200, otelPayload());
+        return;
+    }
+
+    if (req.method === "POST" && path === "/api/otel/apply") {
+        const config = saveOtelConfig(await readBody(req));
+        const result = applyToLoginEnv(config);
+        sendJson(res, 200, { result, ...otelPayload() });
+        return;
+    }
+
+    if (req.method === "POST" && path === "/api/otel/remove") {
+        const result = removeFromLoginEnv();
+        saveOtelConfig({ ...loadOtelConfig(), enabled: false });
+        sendJson(res, 200, { result, ...otelPayload() });
+        return;
+    }
+
     sendJson(res, 404, { error: "not found" });
 }
 
@@ -175,7 +215,11 @@ const canvas = createCanvas({
         type: "object",
         properties: {
             sessionId: { type: "string", description: "Session to focus on open. Defaults to all sessions." },
-            tab: { type: "string", enum: ["sessions", "models", "rates", "otel"], description: "Initial tab." },
+            tab: {
+                type: "string",
+                enum: ["sessions", "models", "rates", "otel", "settings"],
+                description: "Initial tab.",
+            },
         },
         additionalProperties: false,
     },
@@ -251,6 +295,39 @@ const canvas = createCanvas({
             description:
                 "Report whether OpenTelemetry export is enabled for this process, the relevant environment variables, and any ingested span summary.",
             handler: () => otelPayload(),
+        },
+        {
+            name: "configure_otel",
+            description:
+                "Turn Copilot's OpenTelemetry export on or off for future launches. Writes the variables into the macOS login environment so Finder/Dock launches inherit them; the current session is unaffected and the app must be restarted. Does not change how token usage is recorded.",
+            inputSchema: {
+                type: "object",
+                properties: {
+                    enabled: { type: "boolean", description: "Master switch. Defaults to off." },
+                    exporter: { type: "string", enum: ["file", "otlp"], description: "Write JSON-lines to a file, or send OTLP to a collector." },
+                    filePath: { type: "string", description: "File exporter path. Defaults to the extension's artifacts directory." },
+                    endpoint: { type: "string", description: "OTLP collector endpoint." },
+                    captureContent: { type: "boolean", description: "Capture full prompt and response content. Off by default." },
+                    apply: { type: "boolean", description: "Apply to the login environment immediately. Defaults to true." },
+                },
+                additionalProperties: false,
+            },
+            handler: (ctx) => {
+                const input = ctx.input || {};
+                const config = loadOtelConfig();
+                if (input.enabled !== undefined) config.enabled = Boolean(input.enabled);
+                if (input.exporter) config.exporter = input.exporter;
+                if (input.filePath) config.vars.COPILOT_OTEL_FILE_EXPORTER_PATH = input.filePath;
+                if (input.endpoint) config.vars.OTEL_EXPORTER_OTLP_ENDPOINT = input.endpoint;
+                if (input.captureContent !== undefined) {
+                    if (input.captureContent) config.vars.OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT = "true";
+                    else delete config.vars.OTEL_INSTRUMENTATION_GENAI_CAPTURE_MESSAGE_CONTENT;
+                }
+                const saved = saveOtelConfig(config);
+                const result = input.apply === false ? null : applyToLoginEnv(saved);
+                broadcast("otel", { reason: "configure" });
+                return { config: saved, result, env: loginEnvStatus(saved) };
+            },
         },
         {
             name: "refresh",

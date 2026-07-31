@@ -10,19 +10,23 @@ Extension source: [`token-usage/`](token-usage/)
 
 ## Quick start
 
-**1. Install** (pick one — the folder-URL route is easiest):
-
-Ask Copilot:
-
-> Install the extension from `https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage`
-
-or from a clone:
+**1. Install** — one command, no clone:
 
 ```sh
-git clone https://github.com/cicorias/gh-app-canvas-token-usage.git
-cd gh-app-canvas-token-usage
-./install.sh
+# bash / zsh / sh — macOS, Linux, WSL
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh
 ```
+
+```powershell
+# PowerShell 5.1+ / PowerShell 7+ — Windows, macOS, Linux
+irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1 | iex
+```
+
+Both install to **user scope** by default. See
+[Installation in detail](#installation-in-detail) for project and session scopes, or ask
+Copilot:
+
+> Install the extension from `https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage`
 
 **2. Reload** — ask Copilot to reload extensions, or restart the CLI.
 
@@ -145,11 +149,39 @@ is always visible.
   **Tool executions** table of call counts and latency per tool. This is the one thing the
   local usage stores cannot tell you — where the *time* goes, as opposed to the tokens.
 
+### Settings tab
+
+- **Purpose** — turn Copilot's OpenTelemetry export on **for the next launch**, without a
+  terminal. Off by default, and entirely separate from token accounting: usage, AI units and
+  cost keep coming from the local session stores whether OTel is on or off.
+- **Why it exists** — the CLI reads OTel variables at startup, and the desktop app launches
+  from Finder or the Dock, so it never sees your shell profile. There is no shell to `export`
+  from. On macOS this tab writes the variables into the launchd GUI domain
+  (`launchctl setenv`), which is the environment LaunchServices hands to app launches, and
+  installs a small LaunchAgent so they survive a logout.
+- **Export OpenTelemetry from Copilot CLI** — the master switch. Unticking it and applying
+  removes every variable the extension manages, returning your environment to stock.
+- **Destination** — **Write to a file** (JSON-lines on disk, no collector to run, and the
+  Telemetry tab reads it straight back) or **Send to an OTLP collector**.
+- **Fields** — each one names the exact environment variable it sets and explains what the
+  CLI does with the value, including its default when left blank. Rarely needed variables
+  (mTLS, resource attributes, OTel log level) sit under **Advanced**.
+- **Save** vs **Save & apply to login environment** — saving records intent only; applying is
+  what touches your environment. Applying affects apps started *afterwards*, so quit Copilot
+  completely and reopen it.
+- **Current state** — the honest three-way view: what the running session actually received
+  at startup, what the next launch will receive, and whether each variable is `live` or
+  pending `on restart`.
+- **Warnings** — surfaced inline, notably that Copilot disables OTLP export over cleartext
+  `http://` (including the default `http://localhost:4318`) rather than sending it
+  unencrypted, and only logs a warning. Use an `https://` collector or the file exporter.
+
 ### From chat
 
 You can also drive it without touching the UI — the canvas exposes `get_summary`,
-`get_session_usage`, `set_rate`, `seed_rate_card`, `otel_status` and `refresh` to the agent,
-so *"what has this session cost me so far?"* just works.
+`get_session_usage`, `set_rate`, `seed_rate_card`, `otel_status`, `configure_otel` and
+`refresh` to the agent, so *"what has this session cost me so far?"* just works, as does
+*"turn on OTel export to a file"*.
 
 ---
 
@@ -176,7 +208,46 @@ not add a `package.json` or `node_modules`.
 > A **project**-scope copy shadows a **user**-scope copy of the same name — the user one is
 > dropped at discovery time. Don't install both.
 
-### Option 1 — from this repository (recommended)
+### Option 1 — one command (recommended)
+
+The install scripts work either piped from the network or run from a clone. With no
+arguments they install to **user scope**.
+
+```sh
+# bash / zsh / sh
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh
+
+# project scope — note the `-s --` that forwards arguments to the piped script
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh -s -- --project /path/to/repo
+
+# session scope, or a specific branch/tag
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh -s -- --session <session-id>
+curl -fsSL https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.sh | sh -s -- --ref v1.2.3
+```
+
+```powershell
+# PowerShell
+irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1 | iex
+
+# with arguments — `iex` can't take parameters, so run it as a script block
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1))) -Project C:\path\to\repo
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1))) -Session <session-id>
+& ([scriptblock]::Create((irm https://raw.githubusercontent.com/cicorias/gh-app-canvas-token-usage/main/install.ps1))) -Ref v1.2.3
+```
+
+| `install.sh` | `install.ps1` | Effect |
+| --- | --- | --- |
+| `--user` (default) | `-User` (default) | install into `$COPILOT_HOME/extensions/` |
+| `--project <repo>` | `-Project <repo>` | install into `<repo>/.github/extensions/` |
+| `--session <id>` | `-Session <id>` | install into that session's `extensions/` |
+| `--ref <branch\|tag>` | `-Ref <branch\|tag>` | source ref to download (default `main`) |
+
+Both scripts warn if Node is older than 22 and print the destination they used. When a
+`token-usage/` folder sits next to the script — i.e. you cloned the repo — that local copy is
+installed and nothing is downloaded. Piping shell scripts from the internet runs remote code;
+read [`install.sh`](install.sh) / [`install.ps1`](install.ps1) first if that matters to you.
+
+### Option 2 — ask Copilot
 
 Ask Copilot to install it, or use the `install_extension` tool, with this folder URL:
 
@@ -184,10 +255,10 @@ Ask Copilot to install it, or use the `install_extension` tool, with this folder
 https://github.com/cicorias/gh-app-canvas-token-usage/tree/main/token-usage
 ```
 
-You'll be asked which scope to install into. This is the best route for other people:
-versioned, reviewable, and easy to update by re-running the install.
+You'll be asked which scope to install into. Versioned, reviewable, and easy to update by
+re-running the install.
 
-### Option 2 — install script
+### Option 3 — from a clone
 
 ```sh
 git clone https://github.com/cicorias/gh-app-canvas-token-usage.git
@@ -198,9 +269,13 @@ cd gh-app-canvas-token-usage
 ./install.sh --session <session-id>      # current session only
 ```
 
-The script warns if Node is older than 22 and prints the destination it used.
+```powershell
+./install.ps1                           # user scope (default)
+./install.ps1 -Project C:\path\to\repo
+./install.ps1 -Session <session-id>
+```
 
-### Option 3 — vendor it into your team's repo
+### Option 4 — vendor it into your team's repo
 
 ```sh
 mkdir -p /path/to/repo/.github/extensions
@@ -211,11 +286,11 @@ Commit it, and everyone working in that repo gets the canvas with **no install s
 Discovery only scans immediate subdirectories of `.github/extensions/`, so keep the folder
 exactly one level deep.
 
-### Option 4 — private gist
+### Option 5 — private gist
 
 Run **Share extension as gist…** from the Copilot command palette (or use the
 `share_extension` tool), then **Install extension from gist…** on the other machine. Good for
-syncing your own machines; use options 1–3 for teams, since a gist isn't reviewable or
+syncing your own machines; use options 1–4 for teams, since a gist isn't reviewable or
 versioned.
 
 ### Manual copy
@@ -256,6 +331,14 @@ project-scope install never commits pricing data.
 | `rate-card.json` | Rate card entries, USD-per-AIU, cache-accounting flag |
 | `live-usage.jsonl` | Captured `assistant.usage` events |
 | `settings.json` | Path to an OTel file-exporter JSONL to ingest |
+| `otel-env.json` | Saved OpenTelemetry settings (off by default) |
+| `otel.env` | The same settings as `KEY=VALUE`, mode `600`, for sourcing from a shell |
+| `otel-env-launchagent.sh` | Replays those variables into the launchd GUI domain at login |
+| `otel.jsonl` | Default file-exporter destination, when that mode is used |
+
+Applying OTel settings also writes `~/Library/LaunchAgents/com.github.copilot.token-usage.otel-env.plist`.
+**Remove from login environment** deletes it, unloads the agent and unsets every managed
+variable.
 
 Nothing is sent anywhere. The canvas is served by a loopback HTTP server on an ephemeral
 port and reads only local files.
@@ -293,9 +376,19 @@ Copilot bills in **AI units**, not raw tokens, and usage rows carry `total_nano_
 
 ## Optional: OpenTelemetry
 
-OTel is configured by environment variables read at **CLI startup**, so it cannot be switched
-on for a session that is already running — set these and relaunch. The Telemetry tab shows
-current status and hands you these snippets.
+OTel is **off by default** and is not involved in token accounting — usage, AI units and cost
+come from the local session stores either way. It adds span- and tool-level timing detail.
+
+It is configured by environment variables read at **CLI startup**, so it cannot be switched on
+for a session that is already running. Because the desktop app launches from Finder or the
+Dock, it never sees your shell profile, so there is no shell to `export` from. The **Settings
+tab** solves that on macOS: it writes the variables into the launchd GUI domain
+(`launchctl setenv`) — the environment LaunchServices hands to app launches — and installs a
+LaunchAgent so they survive a logout. Tick the box, choose a destination, apply, then fully
+quit and reopen Copilot.
+
+To run `copilot` from a terminal instead, the Settings tab prints the equivalent exports, or
+use these directly:
 
 ```sh
 # Local collector
@@ -310,6 +403,11 @@ OTEL_SERVICE_NAME=github-copilot
 COPILOT_OTEL_FILE_EXPORTER_PATH="$HOME/.copilot/extensions/token-usage/artifacts/otel.jsonl"
 OTEL_SERVICE_NAME=github-copilot
 ```
+
+> **Cleartext endpoints.** Copilot disables OTLP export when the endpoint resolves to
+> `http://` — including the default `http://localhost:4318` — rather than sending it
+> unencrypted, and surfaces that only as a warning in the CLI log. If a collector shows no
+> data, use an `https://` endpoint or the file exporter.
 
 Point the Telemetry tab at that JSONL file to see spans and tool-execution timings. An OTLP
 collector endpoint is reported but not ingested: that would require a receiver process
@@ -333,7 +431,8 @@ outliving every session, for data the local stores already provide.
 
 ```
 .
-├── install.sh                   user / project / session installer
+├── install.sh                   POSIX sh installer (local or curl-piped)
+├── install.ps1                  PowerShell installer (local or irm-piped)
 └── token-usage/
     ├── copilot-extension.json   manifest (required for gist install)
     ├── extension.mjs            wiring: joinSession, canvas, HTTP server, SSE
@@ -342,6 +441,7 @@ outliving every session, for data the local stores already provide.
     ├── usagedb.mjs              read-only session-store.db reader
     ├── live.mjs                 assistant.usage capture and JSONL store
     ├── otel.mjs                 OTel env detection, settings, JSONL ingest
+    ├── otelenv.mjs              OTel desired-state config + launchd login environment
     ├── paths.mjs                COPILOT_HOME and artifact path resolution
     └── ui.html                  canvas renderer
 ```
