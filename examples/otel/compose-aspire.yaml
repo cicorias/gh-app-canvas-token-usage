@@ -1,0 +1,31 @@
+# Aspire dashboard as a local OTLP target for GitHub Copilot CLI.
+#
+# Every value is overridable through the environment, and aspire-up.sh /
+# aspire-up.ps1 set them for you (including resolving OTEL_CERT_DIR to an
+# absolute path, which bind mounts require). To drive it by hand:
+#
+#   export OTEL_CERT_DIR="$PWD/.otel-certs"
+#   ./otel-certs.sh --cert-dir "$OTEL_CERT_DIR"
+#   docker compose -f compose-aspire.yaml up -d
+#
+# TLS is not optional: Copilot disables OTLP export rather than send it over
+# cleartext http://, and reports that only in its own log.
+
+services:
+  dashboard:
+    image: ${ASPIRE_IMAGE:-mcr.microsoft.com/dotnet/aspire-dashboard:latest}
+    container_name: ${ASPIRE_NAME:-aspire-dashboard}
+    ports:
+      - "${ASPIRE_UI_PORT:-18888}:18888"
+      # 18890 is the dashboard's own OTLP/HTTP port. Copilot speaks OTLP over
+      # HTTP only, so the gRPC port (18889) is deliberately not published.
+      - "${ASPIRE_OTLP_PORT:-4318}:18890"
+    environment:
+      ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT_URL: "https://+:18890"
+      # /certs is only the container-side mount target below; it is arbitrary
+      # and unrelated to where the certificates live on the host.
+      ASPNETCORE_Kestrel__Certificates__Default__Path: /certs/otlp-fullchain.crt
+      ASPNETCORE_Kestrel__Certificates__Default__KeyPath: /certs/otlp.key
+    volumes:
+      - "${OTEL_CERT_DIR:-./.otel-certs}:/certs:ro"
+    stop_grace_period: 2s

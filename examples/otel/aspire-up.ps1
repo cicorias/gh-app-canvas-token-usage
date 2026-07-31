@@ -30,6 +30,7 @@ param(
     [Alias('o')][int]$OtlpPort = 4318,
     [Alias('i')][string]$Image = 'mcr.microsoft.com/dotnet/aspire-dashboard:latest',
     [Alias('r')][string]$Runtime,
+    [Alias('c')][string]$ComposeFile,
     [Alias('H')][string[]]$CertHost = @(),
     [switch]$RelaxKeyPerms,
     [switch]$NoCerts,
@@ -41,11 +42,7 @@ $PSNativeCommandUseErrorActionPreference = $false
 
 $here = Split-Path -Parent $PSCommandPath
 
-# Where the certificates are mounted inside the container. Nothing depends on
-# this value; it just has to match the two Kestrel paths below.
-$containerCertDir = '/certs'
-# The dashboard's own OTLP/HTTP port inside the container.
-$containerOtlpPort = 18890
+if (-not $ComposeFile) { $ComposeFile = Join-Path $here 'compose-aspire.yaml' }
 
 if (-not $Runtime) {
     foreach ($candidate in @('docker', 'podman')) {
@@ -56,6 +53,11 @@ if (-not $Runtime) { throw 'No container runtime found; install docker or podman
 if (-not (Get-Command $Runtime -ErrorAction SilentlyContinue)) { throw "$Runtime not found on PATH." }
 & $Runtime info 2>&1 | Out-Null
 if ($LASTEXITCODE -ne 0) { throw "$Runtime is installed but not running." }
+
+. (Join-Path $here 'compose.ps1')
+Resolve-Compose -Runtime $Runtime
+if (-not (Test-Path -LiteralPath $ComposeFile)) { throw "Compose file not found: $ComposeFile" }
+$ComposeFile = (Resolve-Path -LiteralPath $ComposeFile).Path
 
 if (-not $NoCerts) {
     $certArgs = @{ CertDir = $CertDir }
@@ -74,28 +76,26 @@ foreach ($f in @('otlp-fullchain.crt', 'otlp.key', 'ca.crt')) {
 }
 
 $running = (& $Runtime ps --filter "name=^$Name$" --format '{{.Names}}' 2>&1) -split "`n" | Where-Object { $_ -eq $Name }
-if ($running) {
-    if (-not $Force) {
-        Write-Host "Dashboard '$Name' is already running (use -Force to replace it)."
-        & (Join-Path $here 'aspire-login-url.ps1') -Name $Name -Runtime $Runtime -UiPort $UiPort
-        exit 0
-    }
+if ($running -and -not $Force) {
+    Write-Host "Dashboard '$Name' is already running (use -Force to replace it)."
+    & (Join-Path $here 'aspire-login-url.ps1') -Name $Name -Runtime $Runtime -UiPort $UiPort
+    exit 0
 }
-# A stopped container of the same name would block the run below.
-& $Runtime rm -f $Name 2>&1 | Out-Null
 
-$runArgs = @(
-    'run', '--rm', '-d', '--name', $Name
-    '-p', "${UiPort}:18888"
-    '-p', "${OtlpPort}:${containerOtlpPort}"
-    '-v', "${CertDir}:${containerCertDir}:ro"
-    '-e', "ASPIRE_DASHBOARD_OTLP_HTTP_ENDPOINT_URL=https://+:${containerOtlpPort}"
-    '-e', "ASPNETCORE_Kestrel__Certificates__Default__Path=${containerCertDir}/otlp-fullchain.crt"
-    '-e', "ASPNETCORE_Kestrel__Certificates__Default__KeyPath=${containerCertDir}/otlp.key"
-    $Image
-)
-& $Runtime @runArgs 2>&1 | Out-Null
-if ($LASTEXITCODE -ne 0) { throw "$Runtime run failed for '$Name'." }
+# Compose reads all of these from the environment; see compose-aspire.yaml.
+$env:OTEL_CERT_DIR = $CertDir
+$env:ASPIRE_NAME = $Name
+$env:ASPIRE_UI_PORT = $UiPort
+$env:ASPIRE_OTLP_PORT = $OtlpPort
+$env:ASPIRE_IMAGE = $Image
+
+$upArgs = @('up', '--detach')
+# Without this, compose leaves a container whose config has not changed alone,
+# so -Force would silently do nothing.
+if ($Force) { $upArgs += '--force-recreate' }
+
+Invoke-Compose -File $ComposeFile -Project $Name -ComposeArgs $upArgs 2>&1 | Out-Null
+if ($LASTEXITCODE -ne 0) { throw "compose up failed for '$Name'." }
 
 # Wait for the TLS listener rather than guessing with a sleep.
 $ready = $false
@@ -123,7 +123,7 @@ if (-not $ready) {
 
 Write-Host ''
 Write-Host 'Aspire dashboard is running.'
-Write-Host "  container   $Name ($Runtime)"
+Write-Host "  container   $Name ($script:ComposeDesc)"
 Write-Host "  UI          http://localhost:$UiPort"
 Write-Host "  OTLP/HTTP   https://localhost:$OtlpPort   (TLS, protobuf)"
 Write-Host ''
